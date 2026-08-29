@@ -44,6 +44,7 @@ class StreamingPipeline:
         read_chunk_size: int = 1024,
         recorder: LiveStreamRecorder | None = None,
         passthrough: bool = False,
+        instrumentation: bool = False,
     ) -> None:
         if read_chunk_size <= 0:
             raise ValueError("read_chunk_size must be positive.")
@@ -73,7 +74,9 @@ class StreamingPipeline:
         self._recorder = recorder
         self._passthrough = passthrough or enhancer is None
         self._instrumentation = (
-            LiveInstrumentation() if recorder is not None else None
+            LiveInstrumentation()
+            if recorder is not None or instrumentation
+            else None
         )
         self._stop_requested = False
         self._flushed = False

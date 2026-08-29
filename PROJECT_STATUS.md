@@ -15,6 +15,7 @@ This document describes what is **actually implemented** in the repository as of
 3. Running **DeepFilterNet3 (DF3)** in offline and native streaming modes
 4. **Live microphone → enhancer → speaker** streaming via a synchronous I/O pipeline
 5. Evaluating enhancement with shared objective metrics and streaming delay compensation
+6. **NLMS adaptive residual-noise filter** as a model-independent DSP primitive (not yet integrated into the live pipeline)
 
 The codebase is intentionally layered:
 
@@ -26,6 +27,8 @@ Benchmark Infrastructure
 Enhancement Models
         ↓
 Evaluation
+        ↓
+DSP (adaptive residual filtering — standalone core)
 ```
 
 | Layer | Responsibility |
@@ -34,8 +37,17 @@ Evaluation
 | **Benchmark** | Select cases, build manifests, generate mixtures, run benchmarks, store results |
 | **Enhancement** | Model abstraction (`Enhancer`) and concrete implementations (currently DF3) |
 | **Evaluation** | Delay alignment, SNR / SI-SDR / STOI / PESQ |
+| **DSP** | Model-independent adaptive residual filtering (`NLMSFilter`) |
 
 Training and fine-tuning are **out of scope** for the benchmark infrastructure; teammates may add new `Enhancer` implementations that plug into the same benchmark path.
+
+**Planned hybrid live path (not integrated yet):**
+
+```text
+Microphone → preprocessing → AI speech enhancer → adaptive residual filter (NLMS) → output
+```
+
+The NLMS core exists as a validated standalone primitive. DeepFilterNet, live I/O, and stereo reference-channel investigation are separate follow-on tasks.
 
 ---
 
@@ -99,7 +111,8 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 | `live/alignment.py` | Recording length lifecycle tracking | DONE | `RecordingLengthTracker` — stable leading-gap detection for post-flush alignment |
 | `live/recorder.py` | Live session recording | DONE | `LiveStreamRecorder`, `align_recorded_streams`, `LiveInstrumentation`, async WAV writer with bounded queue |
 | `live/session_analysis.py` | Offline live-session analysis | DONE | `analyze_live_session`, `find_energy_drop_windows` — delay-compensated energy-drop windows |
-| `live/pipeline.py` | Live streaming orchestration | DONE | `StreamingPipeline` — optional `recorder=`; flush tail via `note_flush_enhanced`; per-chunk instrumentation |
+| `live/replay.py` | Deterministic live session replay | DONE | `replay_wav_file`, `replay_wav_through_enhancer` — reuses `StreamingPipeline` + fake I/O |
+| `live/pipeline.py` | Live streaming orchestration | DONE | `StreamingPipeline` — optional `recorder=`; `instrumentation=`; flush tail via `note_flush_enhanced` |
 | `live/__init__.py` | Public live-audio exports | DONE | |
 | `__init__.py` | Public audio exports | DONE | Re-exports io, mixing, resampling, live helpers |
 
@@ -136,6 +149,15 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 | `metrics.py` | Objective metrics | DONE | `calculate_snr`, `calculate_si_sdr`, `calculate_stoi`, `calculate_pesq`, `evaluate_pair`, `evaluate_model` |
 | `__init__.py` | Public evaluation exports | DONE | |
 
+### DSP (`src/drdo_anc/dsp/`)
+
+| File | Responsibility | Status | Important APIs / Notes |
+|------|----------------|--------|------------------------|
+| `adaptive_filter.py` | NLMS adaptive residual-noise filter | DONE | `NLMSFilter` — stateful mono `[T]` `process(primary, reference)`, `reset()`; `float32`; no model/hardware imports |
+| `__init__.py` | Public DSP exports | DONE | Re-exports `NLMSFilter` |
+
+**Not a complete ANC system:** requires a suitable reference signal. Single-microphone stereo-channel investigation and DF3 integration are later stages.
+
 ### Benchmark (`src/drdo_anc/benchmark/`)
 
 | File | Responsibility | Status | Important APIs / Notes |
@@ -166,6 +188,9 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 | `test_live_audio.py` | Live audio pipeline tests | DONE | Fake I/O only — no physical microphone required |
 | `test_live_recording.py` | Live recording tests | DONE | WAV/session/metadata validation; delayed-enhancer alignment; energy-drop analysis |
 | `analyze_live_session.py` | Offline live-session analysis CLI | DONE | Delay-compensated energy-drop window report for a session directory |
+| `replay_live_session.py` | Live session replay CLI | DONE | Replay `input.wav` through any registered model via `process_stream()` + `flush()` |
+| `test_live_replay.py` | Live replay tests | DONE | Fake enhancer; arbitrary chunk sizes; determinism; metadata |
+| `test_adaptive_filter.py` | NLMS adaptive filter tests | DONE | Synthetic correlated-noise attenuation; streaming/full equivalence; stability; reset |
 | `test_live_passthrough.py` | Hardware passthrough diagnostics | DONE | Minimal duplex, pipeline, sine, capture-to-WAV modes |
 | `build_evaluation_fixtures.py` | Local manifest fixtures | DONE | Builds `tests/fixtures/evaluation_manifest/` at test time |
 | `evaluate.py` | Thin evaluation CLI | DONE | Wraps `drdo_anc.evaluation` |
@@ -530,6 +555,17 @@ Offline analysis:
 ```
 
 Uses `metadata.streaming_delay_samples` (or `--delay-samples`) with `apply_evaluation_delay` and reports windows where enhanced RMS energy drops unusually far below input.
+
+Replay workflow:
+
+```bash
+.venv\Scripts\python.exe scripts/replay_live_session.py \
+    --input data\live_recordings\<session>\input.wav \
+    --model DeepFilterNet3 \
+    --output data\live_recordings\<session>\replayed_df3.wav
+```
+
+Replays through `StreamingPipeline` with fake I/O (same `process_stream()` + single `flush()` path as live mic). Default chunk size comes from sibling `metadata.json` or 1024. Use `--realtime` for paced replay. Writes sibling `.json` metadata next to the output WAV.
 
 ### Diagnostics
 
@@ -928,6 +964,12 @@ Tests are **script-based** (`python scripts/test_*.py`), not a committed pytest 
 | `test_df3_manifest_benchmark.py::test_df3_smoke_benchmark_integration` | 2-case live HF + DF3 | PASS (requires `SIH26_INTEGRATION=1` + DF3 build) |
 | `test_benchmark_runner.py` DF3 tests | Local Freesound WAV integration | PASS |
 
+### DSP tests
+
+| Test | Purpose | Status |
+|------|---------|--------|
+| `test_adaptive_filter.py` (13 tests) | NLMS construction, correlated-noise attenuation, zero-reference/zero-input stability, arbitrary chunk sizes, streaming/full equivalence, reset, no NaN/Inf | PASS (2026-08-30) |
+
 ---
 
 ## 21. Completed vs Pending
@@ -952,6 +994,7 @@ Tests are **script-based** (`python scripts/test_*.py`), not a committed pytest 
 - [x] Generic `BenchmarkRunner` for WAV-path datasets (`ListDataset`, local files)
 - [x] Live audio I/O layer (`AudioInput`/`AudioOutput`, sounddevice backend, `StreamingPipeline`)
 - [x] Live enhancement CLI (`run_live_enhancement.py`) with pass-through mode
+- [x] NLMS adaptive residual-noise filter core (`dsp/adaptive_filter.py`) with synthetic validation tests
 
 ### PARTIAL
 
@@ -972,6 +1015,8 @@ Tests are **script-based** (`python scripts/test_*.py`), not a committed pytest 
 - [ ] Fine-tuned model `Enhancer` implementations (teammate responsibility)
 - [ ] Training pipeline integration
 - [ ] Persistent mixture WAV cache (by design omitted)
+- [ ] NLMS integration into live/DF3 hybrid pipeline (DSP core validated; reference-channel investigation pending)
+- [ ] Stereo microphone reference-channel suitability study (inter-channel correlation, energy, speech/noise correlation)
 
 ### BLOCKED
 
@@ -985,11 +1030,10 @@ Tests are **script-based** (`python scripts/test_*.py`), not a committed pytest 
 
 Recommended engineering tasks based on **actual** repository state:
 
-1. **Integrate teammate fine-tuned models** — implement new `Enhancer` subclasses and register with `register_model(ModelConfig(...))`; run via `run_df3_manifest_benchmark.py --model <name>`.
-2. **Multi-model comparison reporting** — aggregate `ManifestBenchmarkReport` JSON across models; optional comparison tables.
-3. **Production manifest policy** — define and generate the 2,500-case manifest once protocol is approved; keep development manifest as default.
-4. **Unified multi-model benchmark CLI** — optional `run_benchmark.py` to run several registered models in one command.
-5. **Reporting dashboard** — visualize benchmark JSON across models (not started).
+1. **Investigate stereo reference suitability** — measure inter-channel correlation, relative energy, and speech/noise correlation on live recordings before wiring channel 1 into `NLMSFilter`.
+2. **Integrate teammate fine-tuned models** — implement new `Enhancer` subclasses and register with `register_model(ModelConfig(...))`; run via `run_df3_manifest_benchmark.py --model <name>`.
+3. **NLMS + DF3 hybrid pipeline** — only after reference-channel investigation confirms a useful reference; chain AI enhancer → `NLMSFilter` in a new stage (do not modify validated DF3 streaming until then).
+4. **Multi-model comparison reporting** — aggregate `ManifestBenchmarkReport` JSON across models; optional comparison tables.
 
 ---
 
@@ -1038,6 +1082,8 @@ These components are working infrastructure. **Extend only for concrete requirem
     - `scripts/test_enhancer_streaming.py`
     - `scripts/test_live_audio.py`
     - `scripts/test_live_recording.py`
+    - `scripts/test_live_replay.py`
+    - `scripts/test_adaptive_filter.py`
     - `scripts/test_live_passthrough.py` (hardware diagnostics)
 14. Prefer small, targeted changes over broad rewrites.
 
@@ -1054,6 +1100,7 @@ These components are working infrastructure. **Extend only for concrete requirem
 | `src/drdo_anc/enhancement/` | `Enhancer` ABC, model registry, and model implementations (DF3 offline + native streaming) |
 | `src/drdo_anc/benchmark/` | Cases, manifests, selection, mixtures, runners, results |
 | `src/drdo_anc/evaluation/` | Metrics, evaluation delay compensation |
+| `src/drdo_anc/dsp/` | Model-independent adaptive residual filtering (`NLMSFilter`) |
 | `scripts/` | Thin CLIs, integration tests, investigation utilities |
 | `data/benchmark_results/` | Committed benchmark JSON outputs (CSVs may be local/gitignored) |
 | `external/DeepFilterNet/` | Vendor DF3 source, DLL build, ONNX model bundle (gitignored) |
@@ -1180,6 +1227,25 @@ These investigations explain **why** the architecture exists:
 | **Status** | DONE |
 | **Validation** | `test_live_recording.py` (10 tests); `analyze_live_session.py` on hardware session |
 
+### Step 4E — Deterministic live session replay
+
+| | |
+|-|-|
+| **Objective** | Replay recorded `input.wav` through any registered enhancer using the same streaming path as live microphone capture |
+| **Key implementation** | `audio/live/replay.py`, `scripts/replay_live_session.py`; reuses `StreamingPipeline` with `FakeAudioInput`/`FakeAudioOutput` |
+| **Status** | DONE |
+| **Validation** | `test_live_replay.py` (10 tests, fake enhancer only) |
+
+### Step 5 — NLMS adaptive residual-noise filter core
+
+| | |
+|-|-|
+| **Objective** | Standalone, model-independent NLMS FIR filter for future hybrid AI + adaptive residual suppression |
+| **Key implementation** | `src/drdo_anc/dsp/adaptive_filter.py` (`NLMSFilter`); `scripts/test_adaptive_filter.py` |
+| **Status** | DONE |
+| **Validation** | 13 synthetic tests: correlated-noise attenuation, streaming/full equivalence, reset, stability; full regression suite pass (2026-08-30) |
+| **Not in scope** | DF3 integration, live pipeline wiring, stereo reference-channel assignment |
+
 ---
 
 ## LAST VERIFIED
@@ -1188,8 +1254,8 @@ These investigations explain **why** the architecture exists:
 
 ## CURRENT PROJECT STATE
 
-The repository provides a complete **deterministic benchmark pipeline** from Hugging Face ZIP manifests through mixture generation, model-boundary resampling, enhancement via any registered `Enhancer` (DeepFilterNet3 today), delay-aware evaluation, and JSON benchmark reports. The approved **60-case development manifest** (`sih26-eval-v1`) has been executed end-to-end with **zero failures** for DeepFilterNet3. A **minimal model registry** wires enhancer factories and per-model streaming delay into `ManifestBenchmarkRunner`. A **live audio I/O layer** (`StreamingPipeline` + sounddevice backend) supports real-time microphone → enhancer → speaker streaming with pass-through mode for hardware latency testing.
+The repository provides a complete **deterministic benchmark pipeline** from Hugging Face ZIP manifests through mixture generation, model-boundary resampling, enhancement via any registered `Enhancer` (DeepFilterNet3 today), delay-aware evaluation, and JSON benchmark reports. The approved **60-case development manifest** (`sih26-eval-v1`) has been executed end-to-end with **zero failures** for DeepFilterNet3. A **minimal model registry** wires enhancer factories and per-model streaming delay into `ManifestBenchmarkRunner`. A **live audio I/O layer** (`StreamingPipeline` + sounddevice backend) supports real-time microphone → enhancer → speaker streaming with pass-through mode for hardware latency testing, session recording, offline analysis, and deterministic replay of recorded inputs through any registered model. A validated **NLMS adaptive residual-noise filter** (`NLMSFilter`) exists as a standalone DSP primitive with synthetic tests; it is **not** yet integrated into the live or DF3 pipeline.
 
 ## NEXT RECOMMENDED ACTION
 
-**Validate live streaming on target hardware** — run `run_live_enhancement.py --passthrough` to measure I/O latency, then `--model DeepFilterNet3` for end-to-end live enhancement. Integrate teammate fine-tuned models via the registry when ready.
+**Investigate stereo reference suitability** — analyze live session recordings for inter-channel correlation, relative energy, and speech/noise correlation before assigning a reference channel to `NLMSFilter` or chaining NLMS after DeepFilterNet3.

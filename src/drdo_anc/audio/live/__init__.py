@@ -8,6 +8,13 @@ from .recorder import (
     create_live_recorder,
     create_live_session_dir,
 )
+from .replay import (
+    DEFAULT_REPLAY_CHUNK_SIZE,
+    ReplayResult,
+    load_session_chunk_size,
+    replay_wav_file,
+    replay_wav_through_enhancer,
+)
 from .sounddevice_backend import (
     SoundDeviceAudioInput,
     SoundDeviceAudioOutput,
@@ -29,6 +36,7 @@ __all__ = [
     "LiveInstrumentation",
     "LiveRecordingPaths",
     "LiveStreamRecorder",
+    "ReplayResult",
     "SoundDeviceAudioInput",
     "SoundDeviceAudioOutput",
     "SoundDeviceDuplexSession",
@@ -37,6 +45,10 @@ __all__ = [
     "close_sounddevice_io",
     "create_live_recorder",
     "create_live_session_dir",
+    "DEFAULT_REPLAY_CHUNK_SIZE",
+    "load_session_chunk_size",
+    "replay_wav_file",
+    "replay_wav_through_enhancer",
     "downmix_to_mono",
     "format_device_listing",
     "list_audio_devices",
