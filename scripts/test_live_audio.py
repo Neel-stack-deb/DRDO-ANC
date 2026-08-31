@@ -5,6 +5,8 @@ from drdo_anc.audio.live import (
     FakeAudioInput,
     FakeAudioOutput,
     StreamingPipeline,
+    downmix_to_mono,
+    upmix_mono_to_channels,
 )
 from drdo_anc.enhancement.base import Enhancer
 
@@ -184,6 +186,24 @@ def test_sample_rate_mismatch_raises() -> None:
         raise AssertionError("Expected sample-rate mismatch error.")
 
 
+def test_downmix_and_upmix_channel_helpers() -> None:
+    stereo = np.array(
+        [[1.0, -1.0], [0.5, 0.5]],
+        dtype=np.float32,
+    )
+
+    mono = downmix_to_mono(stereo)
+    assert mono.shape == (2,)
+    assert np.allclose(mono, [0.0, 0.5])
+
+    upmixed = upmix_mono_to_channels(
+        np.array([0.25, 0.75], dtype=np.float32),
+        2,
+    )
+    assert upmixed.shape == (2, 2)
+    assert np.allclose(upmixed[:, 0], upmixed[:, 1])
+
+
 def test_passthrough_does_not_call_flush() -> None:
     enhancer = TrackingEnhancer()
     audio_input = FakeAudioInput(
@@ -214,6 +234,7 @@ def main() -> None:
         test_flush_called_exactly_once_and_writes_tail,
         test_request_stop_triggers_single_flush,
         test_sample_rate_mismatch_raises,
+        test_downmix_and_upmix_channel_helpers,
         test_passthrough_does_not_call_flush,
     ]
 

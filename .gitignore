@@ -44,3 +44,5 @@ zip/
 *.tar.lzo
 
 data/benchmark_results/
+data/
+data/live_recordings/
