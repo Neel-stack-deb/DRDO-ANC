@@ -47,6 +47,7 @@ class StreamingPipeline:
         recorder: LiveStreamRecorder | None = None,
         passthrough: bool = False,
         telemetry_callback: Callable[[np.ndarray, np.ndarray, float], None] | None = None,
+        instrumentation: bool = False,
     ) -> None:
         if read_chunk_size <= 0:
             raise ValueError("read_chunk_size must be positive.")
@@ -76,7 +77,9 @@ class StreamingPipeline:
         self._recorder = recorder
         self._passthrough = passthrough or enhancer is None
         self._instrumentation = (
-            LiveInstrumentation() if recorder is not None else None
+            LiveInstrumentation()
+            if recorder is not None or instrumentation
+            else None
         )
         self._telemetry_callback = telemetry_callback
         self._stop_requested = False
