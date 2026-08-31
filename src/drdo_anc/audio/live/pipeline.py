@@ -1,9 +1,11 @@
+from __future__ import annotations
 import time
+from typing import Callable, Any, TYPE_CHECKING
 
 import numpy as np
-import torch
 
-from drdo_anc.enhancement.base import Enhancer
+if TYPE_CHECKING:
+    from drdo_anc.enhancement.base import Enhancer
 
 from .interfaces import AudioInput, AudioOutput
 from .recorder import LiveInstrumentation, LiveStreamRecorder
@@ -44,6 +46,7 @@ class StreamingPipeline:
         read_chunk_size: int = 1024,
         recorder: LiveStreamRecorder | None = None,
         passthrough: bool = False,
+        telemetry_callback: Callable[[np.ndarray, np.ndarray, float], None] | None = None,
         instrumentation: bool = False,
     ) -> None:
         if read_chunk_size <= 0:
@@ -78,6 +81,7 @@ class StreamingPipeline:
             if recorder is not None or instrumentation
             else None
         )
+        self._telemetry_callback = telemetry_callback
         self._stop_requested = False
         self._flushed = False
         self._shutdown_complete = False
@@ -206,20 +210,32 @@ class StreamingPipeline:
 
         if self._enhancer is None:
             self._write_output(chunk, processing_time_s=0.0)
+            if self._telemetry_callback is not None:
+                self._telemetry_callback(chunk, chunk, 0.0)
             return
 
         start = time.perf_counter()
 
+        import torch
         output_tensor = self._enhancer.process_stream(
             torch.from_numpy(chunk).float(),
         )
 
         processing_time_s = time.perf_counter() - start
-        self._write_tensor(output_tensor, processing_time_s)
+        
+        output_array = _tensor_to_mono_numpy(output_tensor)
+        self._write_output(
+            output_array,
+            processing_time_s,
+            from_flush=False,
+        )
+        
+        if self._telemetry_callback is not None:
+            self._telemetry_callback(chunk, output_array, processing_time_s)
 
     def _write_tensor(
         self,
-        audio: torch.Tensor,
+        audio: Any,
         processing_time_s: float,
         *,
         from_flush: bool = False,
@@ -292,7 +308,7 @@ class StreamingPipeline:
             self._shutdown_complete = True
 
 
-def _tensor_to_mono_numpy(audio: torch.Tensor) -> np.ndarray:
+def _tensor_to_mono_numpy(audio: Any) -> np.ndarray:
     array = (
         audio.detach()
         .cpu()
