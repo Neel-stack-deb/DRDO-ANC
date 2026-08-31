@@ -112,6 +112,10 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 | `live/recorder.py` | Live session recording | DONE | `LiveStreamRecorder`, `align_recorded_streams`, `LiveInstrumentation`, async WAV writer with bounded queue |
 | `live/session_analysis.py` | Offline live-session analysis | DONE | `analyze_live_session`, `find_energy_drop_windows` — delay-compensated energy-drop windows |
 | `live/replay.py` | Deterministic live session replay | DONE | `replay_wav_file`, `replay_wav_through_enhancer` — reuses `StreamingPipeline` + fake I/O |
+| `live/multimic.py` | Dual-mic reference architecture | DONE | `MultiMicConfig`, `MultiChannelAudioInput`, `ChannelRouter`, `RoutedPrimaryAudioInput`, `DualMicResidualFrame`, `analyze_channel_pair` — channel assignment is configuration, not hardcoded |
+| `live/capture_ux.py` | Shared capture terminal UX | DONE | Countdown, progress bar, completion/failure messages — shared by dual-mic and independent-mic experiment scripts |
+| `live/independent_mic.py` | Independent-device dual-mic capture | DONE | `IndependentMicConfig`, `record_independent_microphones`, `analyze_independent_pair` — parallel threads, `synchronization=independent_devices`, drift/delay reporting |
+| `live/sounddevice_multimic.py` | Synchronized multi-channel capture | DONE | `SoundDeviceMultiChannelInput`, `record_dual_microphone`, `FakeMultiChannelAudioInput` — one `InputStream` clock |
 | `live/pipeline.py` | Live streaming orchestration | DONE | `StreamingPipeline` — optional `recorder=`; `instrumentation=`; flush tail via `note_flush_enhanced` |
 | `live/__init__.py` | Public live-audio exports | DONE | |
 | `__init__.py` | Public audio exports | DONE | Re-exports io, mixing, resampling, live helpers |
@@ -191,6 +195,8 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 | `replay_live_session.py` | Live session replay CLI | DONE | Replay `input.wav` through any registered model via `process_stream()` + `flush()` |
 | `test_live_replay.py` | Live replay tests | DONE | Fake enhancer; arbitrary chunk sizes; determinism; metadata |
 | `test_adaptive_filter.py` | NLMS adaptive filter tests | DONE | Synthetic correlated-noise attenuation; streaming/full equivalence; stability; reset |
+| `test_dual_microphone.py` | Dual-mic reference capture tests | DONE | Synthetic routing/analysis tests; `--capture` hardware diagnostic writes `primary.wav` / `reference.wav` / `stereo.wav` |
+| `test_independent_microphones.py` | Independent-device mic experiment | DONE | Parallel capture from two input devices; drift/delay analysis; `--capture` writes `primary.wav` / `reference.wav` / `metadata.json` |
 | `test_live_passthrough.py` | Hardware passthrough diagnostics | DONE | Minimal duplex, pipeline, sine, capture-to-WAV modes |
 | `build_evaluation_fixtures.py` | Local manifest fixtures | DONE | Builds `tests/fixtures/evaluation_manifest/` at test time |
 | `evaluate.py` | Thin evaluation CLI | DONE | Wraps `drdo_anc.evaluation` |
@@ -970,6 +976,20 @@ Tests are **script-based** (`python scripts/test_*.py`), not a committed pytest 
 |------|---------|--------|
 | `test_adaptive_filter.py` (13 tests) | NLMS construction, correlated-noise attenuation, zero-reference/zero-input stability, arbitrary chunk sizes, streaming/full equivalence, reset, no NaN/Inf | PASS (2026-08-30) |
 
+### Dual-microphone tests
+
+| Test | Purpose | Status |
+|------|---------|--------|
+| `test_dual_microphone.py` (9 unit tests) | `MultiMicConfig` validation, configurable channel routing, fake multi-channel streaming, correlation/delay analysis, `DualMicResidualFrame` | PASS (2026-08-30) |
+| `test_dual_microphone.py --capture` | Synchronized 2-ch hardware capture + WAV/metadata export | MANUAL (requires external 2-ch ADC) |
+
+### Independent-device microphone tests
+
+| Test | Purpose | Status |
+|------|---------|--------|
+| `test_independent_microphones.py` (10 unit tests) | Parallel independent capture, drift/sample-count difference, delay/correlation, metadata flags (`independent_devices`, `clock_locked: false`) | PASS (2026-08-31) |
+| `test_independent_microphones.py --capture` | Realtek + AB13X (or other) separate input devices | MANUAL |
+
 ---
 
 ## 21. Completed vs Pending
@@ -995,6 +1015,8 @@ Tests are **script-based** (`python scripts/test_*.py`), not a committed pytest 
 - [x] Live audio I/O layer (`AudioInput`/`AudioOutput`, sounddevice backend, `StreamingPipeline`)
 - [x] Live enhancement CLI (`run_live_enhancement.py`) with pass-through mode
 - [x] NLMS adaptive residual-noise filter core (`dsp/adaptive_filter.py`) with synthetic validation tests
+- [x] Dual-microphone reference capture architecture (`audio/live/multimic.py`, `sounddevice_multimic.py`) with synthetic tests and hardware diagnostic CLI
+- [x] Independent-device microphone experiment tool (`audio/live/independent_mic.py`, `scripts/test_independent_microphones.py`) for separate Realtek/AB13X reference investigation
 
 ### PARTIAL
 
@@ -1015,8 +1037,8 @@ Tests are **script-based** (`python scripts/test_*.py`), not a committed pytest 
 - [ ] Fine-tuned model `Enhancer` implementations (teammate responsibility)
 - [ ] Training pipeline integration
 - [ ] Persistent mixture WAV cache (by design omitted)
-- [ ] NLMS integration into live/DF3 hybrid pipeline (DSP core validated; reference-channel investigation pending)
-- [ ] Stereo microphone reference-channel suitability study (inter-channel correlation, energy, speech/noise correlation)
+- [ ] NLMS integration into live/DF3 hybrid pipeline (DSP core validated; reference-channel **hardware experiment** pending)
+- [ ] Stereo / dual-mic reference suitability thresholds (collect Conditions A/B/C data first — no predefined “good reference” cutoffs)
 
 ### BLOCKED
 
@@ -1030,10 +1052,9 @@ Tests are **script-based** (`python scripts/test_*.py`), not a committed pytest 
 
 Recommended engineering tasks based on **actual** repository state:
 
-1. **Investigate stereo reference suitability** — measure inter-channel correlation, relative energy, and speech/noise correlation on live recordings before wiring channel 1 into `NLMSFilter`.
-2. **Integrate teammate fine-tuned models** — implement new `Enhancer` subclasses and register with `register_model(ModelConfig(...))`; run via `run_df3_manifest_benchmark.py --model <name>`.
-3. **NLMS + DF3 hybrid pipeline** — only after reference-channel investigation confirms a useful reference; chain AI enhancer → `NLMSFilter` in a new stage (do not modify validated DF3 streaming until then).
-4. **Multi-model comparison reporting** — aggregate `ManifestBenchmarkReport` JSON across models; optional comparison tables.
+1. **Run independent-device hardware experiments** — use `scripts/test_independent_microphones.py --capture --primary-device <REALTEK> --reference-device <AB13X>` for Conditions A/B/C; compare RMS, correlation, delay, and sample-count drift in `metadata.json`.
+2. **Run synchronized dual-mic experiments** (if 2-ch ADC available) — `scripts/test_dual_microphone.py --capture` for comparison.
+3. **Validate reference signal quality** — decide whether the reference mic carries sufficiently correlated noise with substantially less direct speech before NLMS integration.
 
 ---
 
@@ -1084,6 +1105,8 @@ These components are working infrastructure. **Extend only for concrete requirem
     - `scripts/test_live_recording.py`
     - `scripts/test_live_replay.py`
     - `scripts/test_adaptive_filter.py`
+    - `scripts/test_dual_microphone.py`
+    - `scripts/test_independent_microphones.py`
     - `scripts/test_live_passthrough.py` (hardware diagnostics)
 14. Prefer small, targeted changes over broad rewrites.
 
@@ -1095,7 +1118,7 @@ These components are working infrastructure. **Extend only for concrete requirem
 
 | Package / area | Owns |
 |----------------|------|
-| `src/drdo_anc/audio/` | WAV I/O, deterministic mixing, model-boundary resampling, live I/O (`audio/live/`) |
+| `src/drdo_anc/audio/` | WAV I/O, deterministic mixing, model-boundary resampling, live I/O (`audio/live/`), dual-mic reference capture (`multimic.py`) |
 | `src/drdo_anc/dataset/` | Metadata parsing, ZIP access, `SourceSample`, source pool filters |
 | `src/drdo_anc/enhancement/` | `Enhancer` ABC, model registry, and model implementations (DF3 offline + native streaming) |
 | `src/drdo_anc/benchmark/` | Cases, manifests, selection, mixtures, runners, results |
@@ -1246,6 +1269,27 @@ These investigations explain **why** the architecture exists:
 | **Validation** | 13 synthetic tests: correlated-noise attenuation, streaming/full equivalence, reset, stability; full regression suite pass (2026-08-30) |
 | **Not in scope** | DF3 integration, live pipeline wiring, stereo reference-channel assignment |
 
+### Step 6 — Dual-microphone reference architecture
+
+| | |
+|-|-|
+| **Objective** | Prepare synchronized primary/reference capture for future AI + NLMS without breaking the mono live path |
+| **Key implementation** | `audio/live/multimic.py` (`MultiMicConfig`, `ChannelRouter`, `MultiChannelAudioInput`, `RoutedPrimaryAudioInput`, `DualMicResidualFrame`); `sounddevice_multimic.py`; `scripts/test_dual_microphone.py` |
+| **Status** | DONE |
+| **Validation** | 9 synthetic tests pass; mono `StreamingPipeline` / DF3 live path unchanged; full regression pass (2026-08-30) |
+| **Not in scope** | NLMS production integration, DF3 → NLMS chaining, predefined reference-quality thresholds |
+| **Hardware experiment** | Pending external 2-ch ADC — Conditions A/B/C documented in capture `metadata.json` |
+
+### Step 7 — Independent-device microphone experiment
+
+| | |
+|-|-|
+| **Objective** | Capture from two physically separate input devices (e.g. Realtek + AB13X) for reference-microphone investigation when a single 2-ch device exposes duplicate channels |
+| **Key implementation** | `audio/live/independent_mic.py`, `audio/live/capture_ux.py`; `scripts/test_independent_microphones.py` |
+| **Status** | DONE |
+| **Validation** | 10 synthetic tests; parallel thread capture; drift/delay/correlation reporting; `metadata.json` documents `synchronization=independent_devices`, `clock_locked=false`; full regression pass (2026-08-31) |
+| **Not in scope** | `StreamingPipeline` integration, NLMS, production pipeline changes |
+
 ---
 
 ## LAST VERIFIED
@@ -1254,8 +1298,8 @@ These investigations explain **why** the architecture exists:
 
 ## CURRENT PROJECT STATE
 
-The repository provides a complete **deterministic benchmark pipeline** from Hugging Face ZIP manifests through mixture generation, model-boundary resampling, enhancement via any registered `Enhancer` (DeepFilterNet3 today), delay-aware evaluation, and JSON benchmark reports. The approved **60-case development manifest** (`sih26-eval-v1`) has been executed end-to-end with **zero failures** for DeepFilterNet3. A **minimal model registry** wires enhancer factories and per-model streaming delay into `ManifestBenchmarkRunner`. A **live audio I/O layer** (`StreamingPipeline` + sounddevice backend) supports real-time microphone → enhancer → speaker streaming with pass-through mode for hardware latency testing, session recording, offline analysis, and deterministic replay of recorded inputs through any registered model. A validated **NLMS adaptive residual-noise filter** (`NLMSFilter`) exists as a standalone DSP primitive with synthetic tests; it is **not** yet integrated into the live or DF3 pipeline.
+The repository provides a complete **deterministic benchmark pipeline** from Hugging Face ZIP manifests through mixture generation, model-boundary resampling, enhancement via any registered `Enhancer` (DeepFilterNet3 today), delay-aware evaluation, and JSON benchmark reports. The approved **60-case development manifest** (`sih26-eval-v1`) has been executed end-to-end with **zero failures** for DeepFilterNet3. A **minimal model registry** wires enhancer factories and per-model streaming delay into `ManifestBenchmarkRunner`. A **live audio I/O layer** (`StreamingPipeline` + sounddevice backend) supports real-time microphone → enhancer → speaker streaming with pass-through mode for hardware latency testing, session recording, offline analysis, and deterministic replay of recorded inputs through any registered model. A validated **NLMS adaptive residual-noise filter** (`NLMSFilter`) exists as a standalone DSP primitive with synthetic tests. A **dual-microphone reference architecture** (`MultiMicConfig`, synchronized `SoundDeviceMultiChannelInput`, configurable `ChannelRouter`) supports future AI + NLMS experiments without modifying the existing mono DF3 live path. An **independent-device experiment tool** (`scripts/test_independent_microphones.py`) captures from two separate input devices (e.g. Realtek primary + AB13X reference) with explicit drift/delay reporting — not integrated into the production pipeline.
 
 ## NEXT RECOMMENDED ACTION
 
-**Investigate stereo reference suitability** — analyze live session recordings for inter-channel correlation, relative energy, and speech/noise correlation before assigning a reference channel to `NLMSFilter` or chaining NLMS after DeepFilterNet3.
+**Run independent-device experiments** — capture Conditions A/B/C with `python scripts/test_independent_microphones.py --capture --primary-device <REALTEK> --reference-device <AB13X> --condition speech_only`. Review `metadata.json` for correlation, delay, and sample-count drift before NLMS integration.
