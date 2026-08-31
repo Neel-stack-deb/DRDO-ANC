@@ -1190,6 +1190,9 @@ These investigations explain **why** the architecture exists:
 
 The repository provides a complete **deterministic benchmark pipeline** from Hugging Face ZIP manifests through mixture generation, model-boundary resampling, enhancement via any registered `Enhancer` (DeepFilterNet3 today), delay-aware evaluation, and JSON benchmark reports. The approved **60-case development manifest** (`sih26-eval-v1`) has been executed end-to-end with **zero failures** for DeepFilterNet3. A **minimal model registry** wires enhancer factories and per-model streaming delay into `ManifestBenchmarkRunner`. A **live audio I/O layer** (`StreamingPipeline` + sounddevice backend) supports real-time microphone → enhancer → speaker streaming with pass-through mode for hardware latency testing.
 
+### Real-Time GUI (Recently Added)
+A premium telemetry console (GUI) has been successfully implemented using PySide6 and QML. It features a completely decoupled architecture where a background daemon thread processes the live audio loop (`StreamingPipeline`), firing non-blocking `telemetry_callbacks` to the GUI thread. The UI is built with a "Dark Informative Telemetry" theme, featuring HTML5 Canvas-based live glowing waveforms, dynamic multi-stop LED volume meters, and history sparklines. It is fully integrated with the `DeepFilterNet3` hardware pipeline via the `scripts/run_live_gui.py` launcher. The documentation (`implementation_plan.md` and `implementation_report.md`) has been fully updated for the team.
+
 ## NEXT RECOMMENDED ACTION
 
-**Validate live streaming on target hardware** — run `run_live_enhancement.py --passthrough` to measure I/O latency, then `--model DeepFilterNet3` for end-to-end live enhancement. Integrate teammate fine-tuned models via the registry when ready.
+**Deploy GUI to target hardware** — teammates can clone the repository, run `pip install -e .` and execute `python scripts/run_live_gui.py --model DeepFilterNet3` to visualize their real-time dual-microphone setups.
