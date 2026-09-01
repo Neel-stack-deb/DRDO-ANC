@@ -162,6 +162,25 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 
 **Not a complete ANC system:** requires a suitable reference signal. Single-microphone stereo-channel investigation and DF3 integration are later stages.
 
+### GUI (`src/drdo_anc/gui/`)
+
+| File | Responsibility | Status | Important APIs / Notes |
+|------|----------------|--------|------------------------|
+| `app.py` | PySide6 `QGuiApplication` + QML engine bootstrap | DONE | `run_gui()` — exposes `guiBridge` to QML; `on_ready` / `on_shutdown` lifecycle hooks |
+| `bridge.py` | QObject telemetry bridge | DONE | `GUIBridge` — 60 FPS `QTimer`; thread-safe latest-value handoff from audio thread; QML properties |
+| `telemetry.py` | Scalar telemetry dataclass | DONE | `AudioTelemetry` |
+| `waveform.py` | Visualization downsampling | DONE | `WaveformProcessor` — peak-preserving reduce to 500 points |
+| `qml/Main.qml` | Main telemetry console window | DONE | Waveforms, meters, sparklines, error banner |
+| `qml/Waveform.qml` | Canvas oscilloscope | DONE | Raw/enhanced waveform rendering |
+| `qml/Metrics.qml` | LED meters + metric grids | DONE | Peak/RMS, latency, buffer, drops, RTF |
+| `demo.py` | Demo mode replay controller | DONE | `ReplayAudioInput`, `DemoAudioController`, `SelectableAudioOutput` — WAV → `StreamingPipeline` |
+| `demo_scenarios.json` | Demo scenario manifest | DONE | Speech only / stationary / impulsive asset paths |
+| `session.py` | Demo + live session coordinator | DONE | `ApplicationSession` — mode switch, transport controls |
+| `qml/DemoControls.qml` | Demo transport + scenario UI | DONE | Play/pause/stop, A/B, mode switch, shortcuts |
+| `qml/DemoPanel.qml` | Factual demo status panel | DONE | Model, latency, RTF, benchmark summary |
+| `qml/DemoButton.qml` | Reusable control button | DONE | |
+| `qml/PipelineChain.qml` | Subtle pipeline stage indicator | DONE | INPUT → CAPTURE → STREAM → DF3 → OUTPUT |
+
 ### Benchmark (`src/drdo_anc/benchmark/`)
 
 | File | Responsibility | Status | Important APIs / Notes |
@@ -198,6 +217,9 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 | `test_dual_microphone.py` | Dual-mic reference capture tests | DONE | Synthetic routing/analysis tests; `--capture` hardware diagnostic writes `primary.wav` / `reference.wav` / `stereo.wav` |
 | `test_independent_microphones.py` | Independent-device mic experiment | DONE | Parallel capture from two input devices; drift/delay analysis; `--capture` writes `primary.wav` / `reference.wav` / `metadata.json` |
 | `test_live_passthrough.py` | Hardware passthrough diagnostics | DONE | Minimal duplex, pipeline, sine, capture-to-WAV modes |
+| `run_live_gui.py` | Real-time telemetry GUI launcher | DONE | PySide6 + QML; `--passthrough`, `--model`, `--fake`, device selection |
+| `test_gui_waveform.py` | GUI waveform downsampling tests | DONE | Empty/small/large chunk handling; no Qt or microphone required |
+| `test_gui_demo.py` | Demo mode streaming tests | DONE | Replay transport, A/B routing, `process_stream` + `flush`, determinism |
 | `build_evaluation_fixtures.py` | Local manifest fixtures | DONE | Builds `tests/fixtures/evaluation_manifest/` at test time |
 | `evaluate.py` | Thin evaluation CLI | DONE | Wraps `drdo_anc.evaluation` |
 | `investigate_streaming_alignment.py` | Alignment investigation (read-only) | DONE | Offset sweep; not part of CI |
@@ -606,6 +628,75 @@ Stats include `input_overflows`, `samples_read`/`samples_written`, `realtime_rat
 
 ---
 
+## 8B. Real-Time GUI
+
+PySide6 + QML telemetry console for live `StreamingPipeline` monitoring. The GUI observes the pipeline; it is **not** on the audio-critical path.
+
+```text
+run_live_gui.py
+    ↓
+QGuiApplication + QQmlApplicationEngine
+    ↓
+GUIBridge (60 FPS QTimer on GUI thread)
+    ↑ latest-value snapshot (thread-safe)
+StreamingPipeline (background thread)
+    ↓
+AudioInput → Enhancer → AudioOutput
+```
+
+### Architecture rules (enforced)
+
+| Rule | Implementation |
+|------|----------------|
+| GUI never blocks audio | Audio thread only copies chunk snapshots in `GUIBridge.publish_data()` |
+| Waveform/metrics on GUI thread | `WaveformProcessor`, RMS/peak, RTF computed in `GUIBridge._on_timeout()` |
+| Model lazy load | `create_enhancer()` deferred until GUI is ready (`on_ready` callback) |
+| Audio starts after UI | `LiveAudioController.start()` called after QML loads |
+| Clean shutdown | Non-daemon audio thread; `request_stop()` + `join()` on `aboutToQuit` |
+
+### Entry points
+
+```bash
+.venv\Scripts\pip.exe install -e ".[gui]"
+.venv\Scripts\python.exe scripts\run_live_gui.py
+.venv\Scripts\python.exe scripts\run_live_gui.py --live-on-start --input-device 15 --output-device 13
+```
+
+Default launch opens in **Demo Mode** (no microphone). Press **Play** to stream a recorded WAV through `StreamingPipeline` + DeepFilterNet3. Switch to **Live Mode** for hardware capture.
+
+Keyboard shortcuts: `Space` play/pause, `A` raw, `B` enhanced, `1`/`2`/`3` scenarios.
+
+### Demo scenarios (local assets)
+
+| Scenario | Input WAV | Enhanced reference (B) |
+|----------|-----------|--------------------------|
+| Speech Only | `data/train_clean_snr5.wav` | Live DF3 streaming output |
+| Speech + Stationary Noise | `data/train_noisy_snr5.wav` | `data/train_enh_snr5.wav` |
+
+### Integration status
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Passthrough visualization | DONE | Hardware validated on Realtek WASAPI 15→13 @ 48 kHz |
+| DeepFilterNet3 visualization | DONE | Hardware smoke: 0 input overflows; RTF ≈ 0.24× on test machine |
+| **Demo Mode (WAV replay)** | **DONE** | Uses `StreamingPipeline` + `process_stream()` + `flush()`; play/pause/stop; A/B raw/enhanced |
+| Fake/demo visuals (`--fake`) | DONE | Animated telemetry only (no pipeline) |
+| Device/model CLI selection | DONE | Live mode via CLI flags |
+| Start/stop controls in QML | DONE | Demo transport controls; live starts on mode switch |
+| Session recording from GUI | PLANNED | Use `run_live_enhancement.py --record-dir` today |
+| Multi-mic / NLMS in GUI | PLANNED | Out of scope for first prototype |
+
+### Hardware validation (2026-08-31)
+
+| Test | Result |
+|------|--------|
+| Passthrough pipeline (WASAPI 15→13, 50 chunks) | PASS — 0 input overflows |
+| DF3 pipeline (WASAPI 15→13, 30 chunks) | PASS — 0 input overflows, RTF ≈ 0.24× |
+| GUI + passthrough auto shutdown (3 s) | PASS — audio thread stopped, no lingering Python process |
+| Interactive speech intelligibility (listening test) | PARTIAL — automated smoke only; manual listening recommended before demo |
+
+---
+
 ## 9. Dataset Architecture
 
 ```text
@@ -990,6 +1081,13 @@ Tests are **script-based** (`python scripts/test_*.py`), not a committed pytest 
 | `test_independent_microphones.py` (10 unit tests) | Parallel independent capture, drift/sample-count difference, delay/correlation, metadata flags (`independent_devices`, `clock_locked: false`) | PASS (2026-08-31) |
 | `test_independent_microphones.py --capture` | Realtek + AB13X (or other) separate input devices | MANUAL |
 
+### GUI tests
+
+| Test | Purpose | Status |
+|------|---------|--------|
+| `test_gui_waveform.py` (4 tests) | Waveform downsampling: empty/small/large/arbitrary chunks | PASS (2026-08-31) |
+| `test_gui_demo.py` (5 tests) | Demo replay transport, A/B output, streaming path, determinism | PASS (2026-08-31) |
+
 ---
 
 ## 21. Completed vs Pending
@@ -1017,8 +1115,13 @@ Tests are **script-based** (`python scripts/test_*.py`), not a committed pytest 
 - [x] NLMS adaptive residual-noise filter core (`dsp/adaptive_filter.py`) with synthetic validation tests
 - [x] Dual-microphone reference capture architecture (`audio/live/multimic.py`, `sounddevice_multimic.py`) with synthetic tests and hardware diagnostic CLI
 - [x] Independent-device microphone experiment tool (`audio/live/independent_mic.py`, `scripts/test_independent_microphones.py`) for separate Realtek/AB13X reference investigation
+- [x] Real-time telemetry GUI (`src/drdo_anc/gui/`, `scripts/run_live_gui.py`) — PySide6 + QML, decoupled telemetry
+- [x] Presentation Demo Mode — WAV replay through live `StreamingPipeline` with play/pause/stop and A/B routing
 
 ### PARTIAL
+
+- [ ] Real-time GUI in-window live device picker (CLI flags work today)
+- [ ] Real-time GUI session recording integration (`--record-dir` exists on CLI only)
 
 - [ ] `BenchmarkRunner` ↔ manifest pipeline integration (manifest runner is separate; no unified WAV-path bridge)
 - [ ] `run_df3_manifest_benchmark.py` multi-model comparison in one invocation (single-model via `--model` works today)
@@ -1108,6 +1211,8 @@ These components are working infrastructure. **Extend only for concrete requirem
     - `scripts/test_dual_microphone.py`
     - `scripts/test_independent_microphones.py`
     - `scripts/test_live_passthrough.py` (hardware diagnostics)
+    - `scripts/test_gui_waveform.py`
+    - `scripts/test_gui_demo.py`
 14. Prefer small, targeted changes over broad rewrites.
 
 **Environment:** Use project virtualenv `.venv\Scripts\python.exe` on Windows — system Python may lack `libdf` / DeepFilterNet dependencies.
@@ -1125,6 +1230,7 @@ These components are working infrastructure. **Extend only for concrete requirem
 | `src/drdo_anc/evaluation/` | Metrics, evaluation delay compensation |
 | `src/drdo_anc/dsp/` | Model-independent adaptive residual filtering (`NLMSFilter`) |
 | `scripts/` | Thin CLIs, integration tests, investigation utilities |
+| `src/drdo_anc/gui/` | Real-time telemetry GUI (PySide6 + QML); no audio/DSP dependencies |
 | `data/benchmark_results/` | Committed benchmark JSON outputs (CSVs may be local/gitignored) |
 | `external/DeepFilterNet/` | Vendor DF3 source, DLL build, ONNX model bundle (gitignored) |
 
@@ -1290,23 +1396,29 @@ These investigations explain **why** the architecture exists:
 | **Validation** | 10 synthetic tests; parallel thread capture; drift/delay/correlation reporting; `metadata.json` documents `synchronization=independent_devices`, `clock_locked=false`; full regression pass (2026-08-31) |
 | **Not in scope** | `StreamingPipeline` integration, NLMS, production pipeline changes |
 
+### Step 8 — Real-Time GUI integration
+
+| | |
+|-|-|
+| **Objective** | PySide6 + QML telemetry console for live `StreamingPipeline` without blocking audio |
+| **Key implementation** | `src/drdo_anc/gui/` (`GUIBridge`, `WaveformProcessor`, QML views); `scripts/run_live_gui.py`; `StreamingPipeline.telemetry_callback` |
+| **Status** | DONE — demo mode added for offline presentation; live mode unchanged |
+| **Validation** | `test_gui_demo.py`, `test_gui_waveform.py`; full regression suite pass (2026-08-31); hardware smoke on Realtek WASAPI 15→13 |
+| **Not in scope** | NLMS, multi-mic, in-GUI device picker, session recording |
+
 ---
 
 ## LAST VERIFIED
 
-**2026-08-30**
+**2026-08-31**
 
 ## CURRENT PROJECT STATE
 
 The repository provides a complete **deterministic benchmark pipeline** from Hugging Face ZIP manifests through mixture generation, model-boundary resampling, enhancement via any registered `Enhancer` (DeepFilterNet3 today), delay-aware evaluation, and JSON benchmark reports. The approved **60-case development manifest** (`sih26-eval-v1`) has been executed end-to-end with **zero failures** for DeepFilterNet3. A **minimal model registry** wires enhancer factories and per-model streaming delay into `ManifestBenchmarkRunner`. A **live audio I/O layer** (`StreamingPipeline` + sounddevice backend) supports real-time microphone → enhancer → speaker streaming with pass-through mode for hardware latency testing, session recording, offline analysis, and deterministic replay of recorded inputs through any registered model. A validated **NLMS adaptive residual-noise filter** (`NLMSFilter`) exists as a standalone DSP primitive with synthetic tests. A **dual-microphone reference architecture** (`MultiMicConfig`, synchronized `SoundDeviceMultiChannelInput`, configurable `ChannelRouter`) supports future AI + NLMS experiments without modifying the existing mono DF3 live path. An **independent-device experiment tool** (`scripts/test_independent_microphones.py`) captures from two separate input devices (e.g. Realtek primary + AB13X reference) with explicit drift/delay reporting — not integrated into the production pipeline.
 
-### Real-Time GUI (Recently Added)
-A premium telemetry console (GUI) has been successfully implemented using PySide6 and QML. It features a completely decoupled architecture where a background daemon thread processes the live audio loop (`StreamingPipeline`), firing non-blocking `telemetry_callbacks` to the GUI thread. The UI is built with a "Dark Informative Telemetry" theme, featuring HTML5 Canvas-based live glowing waveforms, dynamic multi-stop LED volume meters, and history sparklines. It is fully integrated with the `DeepFilterNet3` hardware pipeline via the `scripts/run_live_gui.py` launcher. The documentation (`implementation_plan.md` and `implementation_report.md`) has been fully updated for the team.
-
-### Real-Time GUI (Recently Added)
-A premium telemetry console (GUI) has been successfully implemented using PySide6 and QML. It features a completely decoupled architecture where a background daemon thread processes the live audio loop (`StreamingPipeline`), firing non-blocking `telemetry_callbacks` to the GUI thread. The UI is built with a "Dark Informative Telemetry" theme, featuring HTML5 Canvas-based live glowing waveforms, dynamic multi-stop LED volume meters, and history sparklines. It is fully integrated with the `DeepFilterNet3` hardware pipeline via the `scripts/run_live_gui.py` launcher. The documentation (`implementation_plan.md` and `implementation_report.md`) has been fully updated for the team.
+A **real-time telemetry GUI** (`src/drdo_anc/gui/`, `scripts/run_live_gui.py`) provides PySide6 + QML visualization of live passthrough and DeepFilterNet3 streaming, plus a **Demo Mode** that replays local WAV assets through the same `StreamingPipeline` path for offline presentation (no microphone required). Status: **DONE** for first-review demo; live device picker and GUI recording remain CLI-only.
 
 ## NEXT RECOMMENDED ACTION
 
-**Deploy GUI to target hardware** — teammates can clone the repository, run `pip install -e .` and execute `python scripts/run_live_gui.py --model DeepFilterNet3` to visualize their real-time dual-microphone setups.
-**Run independent-device experiments** — capture Conditions A/B/C with `python scripts/test_independent_microphones.py --capture --primary-device <REALTEK> --reference-device <AB13X> --condition speech_only`. Review `metadata.json` for correlation, delay, and sample-count drift before NLMS integration.
+1. **Rehearse the presentation** — `python scripts/run_live_gui.py`, select scenarios 1–3, press Play, toggle A/B, then switch to Live Mode only if hardware is available.
+2. **Run independent-device experiments** — capture Conditions A/B/C with `python scripts/test_independent_microphones.py --capture`.
