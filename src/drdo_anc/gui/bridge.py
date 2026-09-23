@@ -38,6 +38,7 @@ class GUIBridge(QObject):
   liveStateChanged = Signal()
   benchmarkStateChanged = Signal()
   devicesChanged = Signal()
+  preflightStateChanged = Signal()
 
   def __init__(self, fps: int = 60) -> None:
     super().__init__()
@@ -127,6 +128,12 @@ class GUIBridge(QObject):
     self._benchmark_finetuned_model = "DeepFilterNet3-Finetuned"
     self._dev_benchmark: dict = {"available": False}
     self._rd_benchmark: dict = {"available": False}
+    self._preflight_status = "NOT_CHECKED"
+    self._preflight_summary = ""
+    self._preflight_check_lines: list[str] = []
+    self._live_fallback_offered = False
+    self._live_fallback_message = ""
+    self._live_fallback_kind = ""
 
   def start_timer(self) -> None:
     interval = int(1000 / self._fps)
@@ -326,6 +333,38 @@ class GUIBridge(QObject):
   @Property(bool, notify=demoStateChanged)
   def isDemoMode(self) -> bool:
     return self._operation_mode == "demo"
+
+  @Property(str, notify=demoStateChanged)
+  def demoSourceLabel(self) -> str:
+    if self._operation_mode == "benchmark":
+      return "BENCHMARK"
+    if self._operation_mode == "live":
+      return "LIVE MICROPHONE"
+    return "RECORDED DEMO"
+
+  @Property(str, notify=preflightStateChanged)
+  def preflightStatus(self) -> str:
+    return self._preflight_status
+
+  @Property(str, notify=preflightStateChanged)
+  def preflightSummary(self) -> str:
+    return self._preflight_summary
+
+  @Property(list, notify=preflightStateChanged)
+  def preflightCheckLines(self) -> list[str]:
+    return list(self._preflight_check_lines)
+
+  @Property(bool, notify=preflightStateChanged)
+  def preflightHasRun(self) -> bool:
+    return self._preflight_status != "NOT_CHECKED"
+
+  @Property(bool, notify=liveStateChanged)
+  def liveFallbackOffered(self) -> bool:
+    return self._live_fallback_offered
+
+  @Property(str, notify=liveStateChanged)
+  def liveFallbackMessage(self) -> str:
+    return self._live_fallback_message
 
   @Property(bool, notify=benchmarkStateChanged)
   def isBenchmarkMode(self) -> bool:
@@ -631,6 +670,39 @@ class GUIBridge(QObject):
     self._live_input_overflows = int(count)
     self.liveStateChanged.emit()
 
+  def set_preflight_report(
+    self,
+    *,
+    status: str,
+    summary: str,
+    check_lines: list[str],
+  ) -> None:
+    self._preflight_status = status
+    self._preflight_summary = summary
+    self._preflight_check_lines = list(check_lines)
+    self.preflightStateChanged.emit()
+
+  def set_preflight_checking(self) -> None:
+    self._preflight_status = "CHECKING"
+    self._preflight_summary = ""
+    self._preflight_check_lines = []
+    self.preflightStateChanged.emit()
+
+  def offer_live_fallback(self, message: str, *, kind: str = "live") -> None:
+    self._live_fallback_offered = True
+    self._live_fallback_message = message
+    self._live_fallback_kind = kind
+    self.set_error(message)
+    self.liveStateChanged.emit()
+
+  def clear_live_fallback(self) -> None:
+    if not self._live_fallback_offered and not self._live_fallback_message:
+      return
+    self._live_fallback_offered = False
+    self._live_fallback_message = ""
+    self._live_fallback_kind = ""
+    self.liveStateChanged.emit()
+
   def clear_demo_reference_metrics(self) -> None:
     self._demo_metrics_available = False
     self.demoStateChanged.emit()
@@ -758,6 +830,26 @@ class GUIBridge(QObject):
   def recoverLive(self) -> None:
     if self._session is not None:
       self._session.recover_live()
+
+  @Slot()
+  def runDemoPreflight(self) -> None:
+    if self._session is not None:
+      self._session.run_demo_preflight()
+
+  @Slot()
+  def emergencyResetDemo(self) -> None:
+    if self._session is not None:
+      self._session.emergency_reset_demo()
+
+  @Slot()
+  def tryLiveAgain(self) -> None:
+    if self._session is not None:
+      self._session.try_live_again()
+
+  @Slot()
+  def useRecordedDemo(self) -> None:
+    if self._session is not None:
+      self._session.use_recorded_demo()
 
   @Slot()
   def stopLive(self) -> None:

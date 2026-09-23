@@ -217,8 +217,10 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 | `live_state.py` | Live status constants | DONE | GUI lifecycle labels |
 | `benchmark_results.py` | Offline benchmark JSON loader | DONE | Job 3: reads `dfn3_finetuned_compare` + `dfn3_finetuned_recording_safe` reports; no inference |
 | `benchmark_bridge.py` | Benchmark → GUI bridge mapping | DONE | Context text, metric tables, hold-out disclaimer |
-| `session.py` | Demo + live session coordinator | DONE | `ApplicationSession` — validates devices/sample rate before live start; `recover_live()` / `stop_live()` |
-| `qml/DemoControls.qml` | Demo transport + scenario UI | DONE | **DEMO MODE** toggle, play/pause/stop/**reset**, A/B, shortcuts |
+| `session.py` | Demo + live session coordinator | DONE | Job 4: `run_demo_preflight()`, `emergency_reset_demo()`, `try_live_again()`, `use_recorded_demo()`; live failure fallback |
+| `demo_preflight.py` | SIH demo readiness checks | DONE | Job 4: `run_demo_preflight()` — devices, finetuned model, manifest WAVs, benchmark JSON (warning) |
+| `preflight_state.py` | Preflight status constants | DONE | `NOT_CHECKED` / `CHECKING` / `READY` / `WARNING` / `FAILED` |
+| `qml/DemoControls.qml` | Demo transport + scenario UI | DONE | Job 4: **DEMO PREFLIGHT**, **RESET DEMO**, live fallback actions; demo/live/benchmark mode toggles |
 | `qml/DemoPanel.qml` | Factual demo status panel | DONE | Demo Mode v2 state, scenario/source/duration/model, missing-category notice |
 | `qml/LivePanel.qml` | Live mode status panel | DONE | Devices (name/API/channels/rate), model, RTF, input overflows |
 | `qml/BenchmarkPanel.qml` | Offline benchmark / results screen | DONE | Read-only tables, SI-SDR bar chart, metric glossary, evaluation metadata |
@@ -284,6 +286,7 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 | `test_gui_demo.py` | Demo mode streaming tests | DONE | Manifest v2, lifecycle status, reset, A/B status, failure cleanup (26 tests) |
 | `test_gui_live_controller.py` | Live Mode controller tests | DONE | Validation messages, start/stop/idempotency, error recovery (10 tests) |
 | `test_gui_benchmark.py` | Benchmark results screen tests | DONE | Loader, fixtures, missing/malformed JSON, artifact cross-check (7 tests) |
+| `test_gui_preflight.py` | Preflight / reset / fallback tests | DONE | Job 4: 16 mocked cases (no hardware) |
 | `build_evaluation_fixtures.py` | Local manifest fixtures | DONE | Builds `tests/fixtures/evaluation_manifest/` at test time |
 | `evaluate.py` | Thin evaluation CLI | DONE | Wraps `drdo_anc.evaluation` |
 | `investigate_streaming_alignment.py` | Alignment investigation (read-only) | DONE | Offset sweep; not part of CI |
@@ -861,6 +864,44 @@ Paired SI-SDR improvement **+2.24 dB**; **118 / 120** improved (2 degraded).
 **Tests:** `scripts/test_gui_benchmark.py` — **7/7 PASS**; full `scripts/test_*.py` regression after Job 3.
 
 **Limitations:** Result JSON under `data/benchmark_results/` is local/gitignored — machines without prior benchmark runs show unavailable. GUI does not re-run or refresh benchmarks (restart app after new JSON). PESQ in docs §18 used 1.851 vs compare table 1.850 — artifact uses **1.850** (3 dp).
+
+### Job 4 — Demo Preflight & Emergency Fallback (2026-09-23)
+
+| Item | Implementation |
+|------|----------------|
+| Paths | **PRIMARY:** mic → `StreamingPipeline` → DF3-Finetuned → headphones. **FALLBACK:** recorded noisy speech → `DemoAudioController` → DF3-Finetuned → A/B playback (independent of live I/O). |
+| Preflight | **DEMO PREFLIGHT** button; states `NOT_CHECKED` / `CHECKING` / `READY` / `WARNING` / `FAILED` (`preflight_state.py`). Checks: input/output device role + availability + optional PortAudio open probe; `DeepFilterNet3-Finetuned` registry + artifact paths (no long inference); demo manifest WAVs; benchmark JSON presence (warning only). Summary **DEMO READY** or **DEMO NOT READY** with per-check ✓/✗ lines. |
+| Reset | **RESET DEMO** — stops live + recorded playback, releases streams, clears A/B to raw, unlocks devices, clears fallback banner, returns to **RECORDED DEMO** idle. Idempotent. |
+| Live failure | On failed live start or runtime `ERROR`: message + **TRY AGAIN** / **USE RECORDED DEMO** (switches to real Demo Mode — not fake live). |
+| Model failure | *Fine-tuned model could not be initialized.* with same fallback actions; no silent model swap. |
+| Demo asset failure | *Demo audio unavailable for this scenario.* — pick another scenario; no silent substitute. |
+| Source banner | Header shows **LIVE MICROPHONE**, **RECORDED DEMO**, or **BENCHMARK** (`demoSourceLabel`). |
+| Independence | Missing benchmark JSON → preflight `WARNING` only; Demo and Live still allowed when core checks pass. |
+| Unchanged | `StreamingPipeline`, DeepFilterNet inference, benchmark methodology, Pi/network audio. |
+
+**Automated tests:** `scripts/test_gui_preflight.py` — preflight matrix, emergency reset, live/model fallback (mocks; no hardware).
+
+**Manual test procedure (operator):**
+
+| Test | Steps | Expected |
+|------|--------|----------|
+| **A** | Launch GUI → **DEMO PREFLIGHT** → all ✓ → Demo Play | **DEMO READY**; recorded A/B works |
+| **B** | Demo → Raw → Enhanced → **RESET DEMO** | Idle; no stuck playback |
+| **C** | Live → Start → Stop → **RESET DEMO** | Safe idle; header **RECORDED DEMO** |
+| **D** | Invalid/unavailable input → Start Live | Graceful error; **USE RECORDED DEMO** opens Demo Mode |
+| **E** | Benchmark → view results → Demo → Play | Benchmark missing does not block demo |
+| **F** | Press **RESET DEMO** repeatedly | No crash; no leaked streams |
+
+**Observations (fill at rehearsal):** _Not run in CI._
+
+#### Remaining limitations (Job 4)
+
+| Limitation | Detail |
+|------------|--------|
+| Preflight I/O probe | Opens/closes PortAudio briefly; may fail on exclusive-mode devices even when live would work |
+| Preflight model | Validates registry + finetuned artifact files; does not load full torch weights |
+| Live hot-unplug | Still surfaces as `ERROR` + fallback; operator may need **RESET DEMO** or **Recover** |
+| Benchmark refresh | Preflight reads disk at click time; benchmark screen still loads at session init |
 
 #### Remaining limitations (Demo Mode v2)
 
@@ -2244,7 +2285,7 @@ python scripts/run_live_enhancement.py --model DeepFilterNet3-Finetuned --input-
 
 ## LAST VERIFIED
 
-**2026-09-23** (Demo Mode v2, Job 2 Live Mode, Job 3 Benchmark screen; full `scripts/test_*.py` regression)
+**2026-09-23** (Demo Mode v2, Jobs 2–4 Live / Benchmark / Preflight; full `scripts/test_*.py` regression)
 
 ## CURRENT PROJECT STATE
 

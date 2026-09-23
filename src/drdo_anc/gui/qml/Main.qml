@@ -50,12 +50,18 @@ Window {
             }
             
             Text {
-                text: guiBridge.operationMode === "live"
-                    ? ("LIVE · " + guiBridge.liveStatus)
-                    : (guiBridge.operationMode === "benchmark" ? "BENCHMARK"
-                    : (guiBridge.operationMode === "demo" ? "DEMO" : "OFFLINE"))
+                text: guiBridge.demoSourceLabel
                 color: cyan
                 font.pixelSize: 48
+                font.bold: true
+                Layout.alignment: Qt.AlignLeft
+            }
+
+            Text {
+                visible: guiBridge.operationMode === "live"
+                text: "· " + guiBridge.liveStatus
+                color: lightGrey
+                font.pixelSize: 28
                 font.bold: true
                 Layout.alignment: Qt.AlignLeft
             }
@@ -85,7 +91,7 @@ Window {
 
         DemoControls {
             Layout.fillWidth: true
-            Layout.preferredHeight: 250
+            Layout.preferredHeight: 320
         }
 
         BenchmarkPanel {
