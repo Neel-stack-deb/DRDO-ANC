@@ -213,9 +213,12 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 | `demo_manifest.py` | Validated demo catalog loader | DONE | `load_validated_demo_catalog()`; `scenario_source_display_path()`; `MISSING_DEMO_SCENARIO_CATEGORIES` documents unavailable SIH noise classes |
 | `demo_scenarios.json` | Demo scenario manifest (`demo-v2`) | DONE | Two validated mixed-speech scenarios (see Demo Mode v2 below) |
 | `playback_queue.py` | Bounded demo playback queue | DONE | `QueuedPlaybackOutput`, `ABQueuedPlaybackOutput` — decouples DF3 from PortAudio; A/B selected at dequeue time |
-| `session.py` | Demo + live session coordinator | DONE | `ApplicationSession` — mode switch, transport controls |
+| `live_controller.py` | Live mic → pipeline → headphones | DONE | Job 2: `LiveAudioController` — `IDLE`/`STARTING`/`LIVE`/`STOPPING`/`ERROR`, idempotent start/stop, `recover()`, injectable I/O for tests |
+| `live_state.py` | Live status constants | DONE | GUI lifecycle labels |
+| `session.py` | Demo + live session coordinator | DONE | `ApplicationSession` — validates devices/sample rate before live start; `recover_live()` / `stop_live()` |
 | `qml/DemoControls.qml` | Demo transport + scenario UI | DONE | **DEMO MODE** toggle, play/pause/stop/**reset**, A/B, shortcuts |
 | `qml/DemoPanel.qml` | Factual demo status panel | DONE | Demo Mode v2 state, scenario/source/duration/model, missing-category notice |
+| `qml/LivePanel.qml` | Live mode status panel | DONE | Devices (name/API/channels/rate), model, RTF, input overflows |
 | `qml/DemoButton.qml` | Reusable control button | DONE | |
 | `qml/PipelineChain.qml` | Subtle pipeline stage indicator | DONE | INPUT → CAPTURE → STREAM → DF3 → OUTPUT |
 
@@ -276,6 +279,7 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 | `test_gui_waveform.py` | GUI waveform downsampling tests | DONE | Empty/small/large chunk handling; no Qt or microphone required |
 | `run_demo_playback_timing.py` | Demo playback timing report | DONE | Write-interval stats for jitter diagnosis |
 | `test_gui_demo.py` | Demo mode streaming tests | DONE | Manifest v2, lifecycle status, reset, A/B status, failure cleanup (26 tests) |
+| `test_gui_live_controller.py` | Live Mode controller tests | DONE | Validation messages, start/stop/idempotency, error recovery (10 tests) |
 | `build_evaluation_fixtures.py` | Local manifest fixtures | DONE | Builds `tests/fixtures/evaluation_manifest/` at test time |
 | `evaluate.py` | Thin evaluation CLI | DONE | Wraps `drdo_anc.evaluation` |
 | `investigate_streaming_alignment.py` | Alignment investigation (read-only) | DONE | Offset sweep; not part of CI |
@@ -783,6 +787,47 @@ Keyboard shortcuts: `Space` play/pause, `A` raw, `B` enhanced, `1`/`2` scenarios
 **Automated tests (2026-09-23):** `scripts/test_gui_demo.py` — **26/26 PASS** (scenario metadata, play/stop lifecycle, A/B status, repeated reset, missing-asset manifest rejection, cleanup after synthetic pipeline failure).
 
 **Full script regression (2026-09-23):** all `scripts/test_*.py` — **29 passed**, **0 failed**, **0 skipped** (integration-gated tests exit 0 without running heavy cases when env flags unset).
+
+### Job 2 — Reliable PC Live Mode (2026-09-23)
+
+| Item | Implementation |
+|------|----------------|
+| Architecture | Unchanged: mic → `open_sounddevice_io()` → `StreamingPipeline` → registered enhancer → headphones |
+| Default model | `DeepFilterNet3-Finetuned` (GUI + `run_live_gui.py`); `DeepFilterNet3` still selectable |
+| Device UI | Separate **INPUT DEVICE** / **OUTPUT DEVICE** combos; role-filtered lists (`input_devices` / `output_devices`); labels show name, host API, channels, default rate |
+| Live panel | `LivePanel.qml` — multi-line summaries per device, active model, sample rate, processing ms, RTF, **input overflow** count (from existing `SoundDeviceStreamStats`) |
+| Pre-start validation | `validate_live_startup()` — role checks, device still in refreshed list, model-boundary sample rate (`create_enhancer(..., load=False)`) |
+| User-visible errors | e.g. *Selected input device is not an audio input.*, *Selected device is unavailable.* — no raw tracebacks in the GUI |
+| Live state machine | `IDLE` → `STARTING` → `LIVE`; stop: `LIVE` → `STOPPING` → `IDLE`; failures → `ERROR` + **Recover** button |
+| Safe lifecycle | Re-entrant lock; repeated Start/Stop; `request_stop()` before closing streams; thread join; `recover()` after ERROR |
+| Demo preserved | Demo Mode v2, A/B, pretrained + fine-tuned registry entries unchanged |
+
+**Automated tests (2026-09-23):** `scripts/test_gui_live_controller.py` **10/10 PASS**; `scripts/test_gui_devices.py` **9/9 PASS**; full `scripts/test_*.py` suite **30/30 scripts exit 0** (optional integration cases still print `SKIP` when env flags unset).
+
+**Manual live GUI (this machine — rediscover indexes with `--list-devices`):**
+
+```bash
+set PYTHONPATH=src
+python scripts/run_live_gui.py --input-device <WASAPI_MIC_INDEX> --output-device <WASAPI_OUT_INDEX>
+```
+
+Select **LIVE**, confirm `LivePanel` shows devices and state **LIVE**, toggle **Stop** / **Recover** after induced errors.
+
+**CLI live (unchanged):**
+
+```bash
+python scripts/run_live_enhancement.py --model DeepFilterNet3-Finetuned --input-device <id> --output-device <id>
+```
+
+#### Remaining limitations (Live Mode)
+
+| Limitation | Detail |
+|------------|--------|
+| PortAudio indexes | Still session-dependent on Windows; GUI persists **name + host API + index** via `QSettings` and re-resolves on refresh |
+| Output underflow counter | Not exposed separately today; GUI shows **input overflows** and combined drop stats from telemetry |
+| Live SI-SDR/STOI/PESQ | Not shown (no clean reference in live path) |
+| Device hot-unplug | Surfaces as stream error → `ERROR`; user clicks **Recover** and refreshes devices |
+| Raspberry Pi / UDP playback | Out of scope (unchanged) |
 
 #### Remaining limitations (Demo Mode v2)
 
@@ -2166,7 +2211,7 @@ python scripts/run_live_enhancement.py --model DeepFilterNet3-Finetuned --input-
 
 ## LAST VERIFIED
 
-**2026-09-23** (Demo Mode v2 hardening + full `scripts/test_*.py` regression)
+**2026-09-23** (Demo Mode v2 + Job 2 Live Mode hardening; full `scripts/test_*.py` regression)
 
 ## CURRENT PROJECT STATE
 

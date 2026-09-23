@@ -139,6 +139,11 @@ Item {
                 label: "Reset"
                 onActivated: guiBridge.resetDemo()
             }
+            DemoButton {
+                visible: guiBridge.operationMode === "live" && guiBridge.liveStatus === "ERROR"
+                label: "Recover"
+                onActivated: guiBridge.recoverLive()
+            }
 
             Item { Layout.fillWidth: true }
 

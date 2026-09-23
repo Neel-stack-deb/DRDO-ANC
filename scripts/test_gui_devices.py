@@ -164,7 +164,7 @@ def test_missing_device_blocks_live_mode() -> None:
         available_inputs=input_devices(devices),
         available_outputs=output_devices(devices),
     )
-    assert reason is not None and "input" in reason.lower()
+    assert reason is not None and "unavailable" in reason.lower()
 
     empty_reason = live_start_block_reason(
         None,
@@ -174,6 +174,17 @@ def test_missing_device_blocks_live_mode() -> None:
     )
     assert empty_reason is not None and "No valid audio input" in empty_reason
     print("PASS: test_missing_device_blocks_live_mode")
+
+
+def test_device_summary_lines_for_live_panel() -> None:
+    devices = devices_from_records(FAKE_HOST)
+    mic = [device for device in devices if device.index == 19][0]
+    lines = mic.summary_lines("input")
+    assert lines[0] == "Microphone (AB13X USB Audio)"
+    assert lines[1] == "Windows WASAPI"
+    assert lines[2] == "2 channels"
+    assert lines[3] == "48000 Hz"
+    print("PASS: test_device_summary_lines_for_live_panel")
 
 
 def test_labels_include_name_api_and_rate() -> None:
@@ -257,6 +268,7 @@ def main() -> int:
         test_gui_selection_maps_to_pipeline_indexes,
         test_defaults_are_not_hard_coded_indexes,
         test_missing_device_blocks_live_mode,
+        test_device_summary_lines_for_live_panel,
         test_labels_include_name_api_and_rate,
         test_recommended_list_hides_wdmks_and_duplicate_apis,
     ]

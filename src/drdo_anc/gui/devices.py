@@ -51,6 +51,27 @@ class GuiAudioDevice:
             f"({', '.join(capability)})"
         )
 
+    def channel_count_for_role(self, role: Role) -> int:
+        if role == "input":
+            return self.max_input_channels
+        return self.max_output_channels
+
+    def summary_lines(self, role: Role) -> list[str]:
+        """Multi-line device facts for the live-mode panel."""
+
+        channels = self.channel_count_for_role(role)
+        ch_label = "channel" if channels == 1 else "channels"
+        sr = int(round(self.default_sample_rate))
+        return [
+            self.name,
+            self.hostapi_name,
+            f"{channels} {ch_label}",
+            f"{sr} Hz",
+        ]
+
+    def summary_text(self, role: Role) -> str:
+        return "\n".join(self.summary_lines(role))
+
 
 def devices_from_records(records: list[dict[str, Any]]) -> list[GuiAudioDevice]:
     """Convert ``list_audio_devices()`` dicts into GUI device objects."""
@@ -271,6 +292,17 @@ def backend_index_for_combo(
     return None
 
 
+def _device_still_available(
+    device: GuiAudioDevice,
+    role: Role,
+    available: list[GuiAudioDevice],
+) -> bool:
+    return any(
+        candidate.index == device.index and candidate.has_role(role)
+        for candidate in available
+    )
+
+
 def live_start_block_reason(
     selected_input: GuiAudioDevice | None,
     selected_output: GuiAudioDevice | None,
@@ -288,17 +320,59 @@ def live_start_block_reason(
             "and refresh devices."
         )
     if selected_input is None:
-        return (
-            "Selected input device is no longer available. "
-            "Choose a microphone from the Input Device list."
-        )
+        return "Selected device is unavailable."
     if selected_output is None:
-        return (
-            "Selected output device is no longer available. "
-            "Choose headphones or speakers from the Output Device list."
-        )
+        return "Selected device is unavailable."
     if not selected_input.is_input:
-        return f"Device {selected_input.label()} cannot be used as input."
+        return "Selected input device is not an audio input."
     if not selected_output.is_output:
-        return f"Device {selected_output.label()} cannot be used as output."
+        return "Selected output device is not an audio output."
+    if not _device_still_available(selected_input, "input", available_inputs):
+        return "Selected device is unavailable."
+    if not _device_still_available(selected_output, "output", available_outputs):
+        return "Selected device is unavailable."
     return None
+
+
+def validate_live_sample_rate(
+    *,
+    model_sample_rate: int,
+    requested_sample_rate: int | None = None,
+) -> tuple[str | None, int]:
+    """Validate the rate used for ``open_sounddevice_io``."""
+
+    effective = int(requested_sample_rate or model_sample_rate)
+    if effective <= 0:
+        return "Sample rate must be positive.", 0
+    if effective != model_sample_rate:
+        return (
+            f"Requested sample rate ({effective} Hz) does not match the "
+            f"model boundary ({model_sample_rate} Hz). "
+            "Omit --sample-rate or use the model rate."
+        ), 0
+    return None, effective
+
+
+def validate_live_startup(
+    selected_input: GuiAudioDevice | None,
+    selected_output: GuiAudioDevice | None,
+    *,
+    available_inputs: list[GuiAudioDevice],
+    available_outputs: list[GuiAudioDevice],
+    model_sample_rate: int,
+    requested_sample_rate: int | None = None,
+) -> tuple[str | None, int]:
+    """Device + sample-rate checks before opening the live stream."""
+
+    block = live_start_block_reason(
+        selected_input,
+        selected_output,
+        available_inputs=available_inputs,
+        available_outputs=available_outputs,
+    )
+    if block is not None:
+        return block, 0
+    return validate_live_sample_rate(
+        model_sample_rate=model_sample_rate,
+        requested_sample_rate=requested_sample_rate,
+    )

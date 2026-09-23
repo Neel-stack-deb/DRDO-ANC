@@ -35,6 +35,7 @@ class GUIBridge(QObject):
   historyUpdated = Signal()
   errorChanged = Signal()
   demoStateChanged = Signal()
+  liveStateChanged = Signal()
   devicesChanged = Signal()
 
   def __init__(self, fps: int = 60) -> None:
@@ -114,6 +115,10 @@ class GUIBridge(QObject):
     self._live_block_reason = ""
     self._devices_locked = False
     self._show_all_devices = False
+    self._live_status = "IDLE"
+    self._live_input_summary = ""
+    self._live_output_summary = ""
+    self._live_input_overflows = 0
 
   def start_timer(self) -> None:
     interval = int(1000 / self._fps)
@@ -162,9 +167,25 @@ class GUIBridge(QObject):
   def sampleRate(self) -> int:
     return self._latest_telemetry.sample_rate
 
-  @Property(bool, notify=telemetryUpdated)
+  @Property(bool, notify=liveStateChanged)
   def isLive(self) -> bool:
-    return self._latest_telemetry.is_live
+    return self._live_status == "LIVE"
+
+  @Property(str, notify=liveStateChanged)
+  def liveStatus(self) -> str:
+    return self._live_status
+
+  @Property(str, notify=liveStateChanged)
+  def liveInputSummary(self) -> str:
+    return self._live_input_summary
+
+  @Property(str, notify=liveStateChanged)
+  def liveOutputSummary(self) -> str:
+    return self._live_output_summary
+
+  @Property(int, notify=liveStateChanged)
+  def liveInputOverflows(self) -> int:
+    return self._live_input_overflows
 
   @Property(str, notify=errorChanged)
   def errorMessage(self) -> str:
@@ -411,6 +432,29 @@ class GUIBridge(QObject):
     self._missing_demo_categories = list(messages)
     self.demoStateChanged.emit()
 
+  def set_live_status(self, status: str) -> None:
+    if self._live_status == status:
+      return
+    self._live_status = status
+    self.liveStateChanged.emit()
+    self.telemetryUpdated.emit()
+
+  def set_live_device_summaries(
+    self,
+    *,
+    input_summary: str,
+    output_summary: str,
+  ) -> None:
+    self._live_input_summary = input_summary
+    self._live_output_summary = output_summary
+    self.liveStateChanged.emit()
+
+  def set_live_input_overflows(self, count: int) -> None:
+    if self._live_input_overflows == count:
+      return
+    self._live_input_overflows = int(count)
+    self.liveStateChanged.emit()
+
   def clear_demo_reference_metrics(self) -> None:
     self._demo_metrics_available = False
     self.demoStateChanged.emit()
@@ -503,6 +547,16 @@ class GUIBridge(QObject):
   def resetDemo(self) -> None:
     if self._session is not None:
       self._session.reset_demo()
+
+  @Slot()
+  def recoverLive(self) -> None:
+    if self._session is not None:
+      self._session.recover_live()
+
+  @Slot()
+  def stopLive(self) -> None:
+    if self._session is not None:
+      self._session.stop_live()
 
   @Slot(int)
   def selectScenario(self, index: int) -> None:
@@ -614,7 +668,7 @@ class GUIBridge(QObject):
 
   def _apply_snapshot(self, snapshot: _TelemetrySnapshot) -> None:
     t = self._latest_telemetry
-    t.is_live = True
+    t.is_live = self._live_status == "LIVE" or self._operation_mode == "live"
     t.processing_time_ms = snapshot.processing_time_s * 1000.0
 
     input_chunk = snapshot.input_chunk

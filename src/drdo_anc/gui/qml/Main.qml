@@ -50,7 +50,9 @@ Window {
             }
             
             Text {
-                text: guiBridge.isLive ? "ACTIVE" : (guiBridge.operationMode === "demo" ? "DEMO" : "OFFLINE")
+                text: guiBridge.operationMode === "live"
+                    ? ("LIVE · " + guiBridge.liveStatus)
+                    : (guiBridge.operationMode === "demo" ? "DEMO" : "OFFLINE")
                 color: cyan
                 font.pixelSize: 48
                 font.bold: true
@@ -90,9 +92,19 @@ Window {
             Layout.fillHeight: true
             spacing: 16
 
-            DemoPanel {
+            Item {
                 Layout.preferredWidth: 260
                 Layout.fillHeight: true
+
+                DemoPanel {
+                    anchors.fill: parent
+                    visible: guiBridge.operationMode === "demo"
+                }
+
+                LivePanel {
+                    anchors.fill: parent
+                    visible: guiBridge.operationMode === "live"
+                }
             }
 
             ColumnLayout {
