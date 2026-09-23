@@ -1,17 +1,29 @@
 {
-  "version": "demo-train-v1",
+  "version": "demo-v2",
   "sample_rate": 48000,
   "scenarios": [
     {
       "id": "training_speech_snr5",
-      "label": "Training Speech — SNR 5 dB",
+      "label": "Mixed Speech — SNR 5 dB",
       "source": "file",
       "wav": "data/train_noisy_snr5.wav",
       "clean_reference": "data/train_clean_snr5.wav",
       "enhanced_wav": "data/train_enh_snr5.wav",
       "enhanced_playback": "live",
+      "noise_type": "mixed_speech",
       "target_snr_db": 5,
       "description": "Project training clip: noisy input, clean reference, offline DF3 enhanced reference"
+    },
+    {
+      "id": "freesound_speech_snr0",
+      "label": "Mixed Speech — Freesound SNR ~0 dB",
+      "source": "file",
+      "wav": "data/generated/clean_freesound_33711_noise_573577_snr0.wav",
+      "clean_reference": "data/clean/clean_freesound_33711.wav",
+      "enhanced_wav": "data/enhanced/clean_freesound_33711_noise_573577_snr0_df3.wav",
+      "enhanced_playback": "live",
+      "noise_type": "mixed_speech",
+      "description": "Long-form noisy speech mixture; offline DF3 reference for metrics only"
     }
   ]
 }

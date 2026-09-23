@@ -9,8 +9,10 @@ from drdo_anc.gui.bridge import GUIBridge
 from drdo_anc.gui.demo import DemoAudioController, load_benchmark_summary
 from drdo_anc.gui.demo_manifest import (
     DemoManifestError,
+    MISSING_DEMO_SCENARIO_CATEGORIES,
     compute_demo_reference_metrics,
     load_validated_demo_catalog,
+    scenario_source_display_path,
 )
 from drdo_anc.gui.devices import (
     GuiAudioDevice,
@@ -120,8 +122,12 @@ class ApplicationSession:
         labels = [scenario.label for scenario in catalog.scenarios]
         self._bridge.set_scenario_labels(labels)
         self._bridge.set_selected_scenario_index(0)
+        self._bridge.set_missing_demo_categories(
+            [message for _, message in MISSING_DEMO_SCENARIO_CATEGORIES],
+        )
 
         scenario = catalog.scenarios[0]
+        self._apply_scenario_to_bridge(scenario)
         self._bridge.set_demo_assets(
             clean_file=scenario.clean_reference_path.name
             if scenario.clean_reference_path
@@ -155,6 +161,16 @@ class ApplicationSession:
         self._demo_controller.set_ab_mode("raw")
         self.refresh_devices()
         self._bridge.set_audio_status("Ready")
+        self._bridge.set_demo_status("IDLE")
+
+    def _apply_scenario_to_bridge(self, scenario) -> None:
+        self._bridge.set_demo_scenario_details(
+            label=scenario.label,
+            source_file=scenario_source_display_path(scenario),
+            sample_rate=scenario.sample_rate,
+            model_name=self._selected_model,
+            duration_s=scenario.duration_s,
+        )
 
     @property
     def selected_input_backend_index(self) -> int | None:
@@ -335,6 +351,12 @@ class ApplicationSession:
             model_name=model_name,
             sample_rate=self._bridge.sampleRate or 48_000,
         )
+        if self._mode == "demo":
+            index = self._bridge.selectedScenarioIndex
+            if 0 <= index < len(self._demo_controller.catalog.scenarios):
+                self._apply_scenario_to_bridge(
+                    self._demo_controller.catalog.scenarios[index],
+                )
         self._publish_device_choices()
         self._bridge.clear_error()
 
@@ -408,9 +430,39 @@ class ApplicationSession:
 
         try:
             self._demo_controller.set_scenario_index(index)
+            scenario = self._demo_controller.catalog.scenarios[index]
+            self._apply_scenario_to_bridge(scenario)
+            self._bridge.set_demo_assets(
+                clean_file=scenario.clean_reference_path.name
+                if scenario.clean_reference_path
+                else "",
+                noisy_file=scenario.wav_path.name,
+                enhanced_ref_file=scenario.enhanced_wav_path.name
+                if scenario.enhanced_wav_path
+                else "",
+                enhanced_playback=(
+                    "Live DF3"
+                    if scenario.enhanced_playback == "live"
+                    else "Offline Reference"
+                ),
+            )
+            if (
+                scenario.clean_reference_path is not None
+                and scenario.enhanced_wav_path is not None
+            ):
+                metrics = compute_demo_reference_metrics(scenario)
+                self._bridge.set_demo_reference_metrics(metrics)
+            else:
+                self._bridge.clear_demo_reference_metrics()
         except DemoManifestError as exc:
             self._bridge.set_error(f"Demo scenario unavailable: {exc}")
             self._bridge.set_audio_status("Error")
+            self._bridge.set_demo_status("ERROR")
+
+    def reset_demo(self) -> None:
+        if self._mode != "demo":
+            self.set_demo_mode()
+        self._demo_controller.reset()
 
     def set_ab_raw(self) -> None:
         self._demo_controller.set_ab_mode("raw")

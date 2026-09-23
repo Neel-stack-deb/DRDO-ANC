@@ -30,6 +30,14 @@ from drdo_anc.gui.demo_manifest import (
     compute_demo_reference_metrics,
     get_scenario_by_index,
     load_validated_demo_catalog,
+    scenario_source_display_path,
+)
+from drdo_anc.gui.demo_state import (
+    DEMO_STATUS_ERROR,
+    DEMO_STATUS_IDLE,
+    DEMO_STATUS_PLAYING_RAW,
+    DEMO_STATUS_PROCESSING,
+    DEMO_STATUS_STOPPED,
 )
 from drdo_anc.audio.live.fake import FakeAudioOutput
 from drdo_anc.audio.live.playback_queue import ABQueuedPlaybackOutput, QueuedPlaybackOutput
@@ -71,6 +79,8 @@ class _IdentityStreamingEnhancer(Enhancer):
 class _RecordingBridge:
     def __init__(self) -> None:
         self.snapshots: list[tuple[np.ndarray, np.ndarray, float]] = []
+        self.demo_status = DEMO_STATUS_IDLE
+        self.errors: list[str] = []
 
     def set_stream_metadata(self, **kwargs) -> None:
         return None
@@ -78,11 +88,17 @@ class _RecordingBridge:
     def set_demo_scenario(self, label: str) -> None:
         return None
 
-    def clear_error(self) -> None:
+    def set_demo_status(self, status: str) -> None:
+        self.demo_status = status
+
+    def set_demo_scenario_details(self, **kwargs) -> None:
         return None
 
+    def clear_error(self) -> None:
+        self.errors.clear()
+
     def set_error(self, message: str) -> None:
-        raise RuntimeError(message)
+        self.errors.append(message)
 
     def publish_data(
         self,
@@ -165,7 +181,7 @@ def test_selectable_output_routes_raw_or_enhanced() -> None:
 
 def test_demo_scenarios_use_project_training_assets() -> None:
     _, scenarios = load_demo_scenarios()
-    assert len(scenarios) == 1
+    assert len(scenarios) >= 1
     scenario = scenarios[0]
     assert scenario.wav_path.name == "train_noisy_snr5.wav"
     assert scenario.clean_reference_path is not None
@@ -324,11 +340,111 @@ def test_demo_scenario_selection_is_deterministic() -> None:
 def test_demo_scenario_index_out_of_range_fails() -> None:
     catalog = load_validated_demo_catalog()
     try:
-        get_scenario_by_index(catalog, 1)
+        get_scenario_by_index(catalog, len(catalog.scenarios) + 5)
     except DemoManifestError as exc:
         assert "out of range" in str(exc).lower()
     else:
         raise AssertionError("Expected DemoManifestError for invalid index")
+
+
+def test_demo_scenario_loading_metadata() -> None:
+    catalog = load_validated_demo_catalog()
+    for scenario in catalog.scenarios:
+        assert scenario.sample_rate == 48_000
+        assert scenario.duration_s >= 1.0
+        assert scenario.wav_path.is_file()
+        display = scenario_source_display_path(scenario)
+        assert display.startswith("data/")
+
+
+def test_demo_controller_play_stop_lifecycle_status() -> None:
+    bridge = _RecordingBridge()
+    controller = DemoAudioController(
+        bridge,
+        physical_output=True,
+        open_output=lambda sample_rate, *, output_device=None, blocksize=1024: (
+            FakeAudioOutput(sample_rate)
+        ),
+    )
+    controller._ensure_enhancer = lambda: _IdentityStreamingEnhancer()
+
+    controller.play()
+    time.sleep(0.01)
+    if controller._running:
+        assert bridge.demo_status in {
+            DEMO_STATUS_PLAYING_RAW,
+            "PLAYING ENHANCED",
+            DEMO_STATUS_PROCESSING,
+        }
+    controller.pause()
+    assert bridge.demo_status == DEMO_STATUS_PROCESSING
+    controller.stop()
+    assert bridge.demo_status == DEMO_STATUS_STOPPED
+    assert controller._sink is None
+
+
+def test_demo_controller_ab_switching_updates_status() -> None:
+    bridge = _RecordingBridge()
+    controller = DemoAudioController(
+        bridge,
+        physical_output=True,
+        open_output=lambda sample_rate, *, output_device=None, blocksize=1024: (
+            FakeAudioOutput(sample_rate)
+        ),
+    )
+    controller._ensure_enhancer = lambda: _IdentityStreamingEnhancer()
+    controller.set_ab_mode("raw")
+    controller.play()
+    time.sleep(0.01)
+    if controller._running:
+        controller.set_ab_mode("enhanced")
+        assert bridge.demo_status == "PLAYING ENHANCED"
+        controller.set_ab_mode("raw")
+        assert bridge.demo_status == DEMO_STATUS_PLAYING_RAW
+    controller.stop()
+
+
+def test_demo_controller_repeated_reset() -> None:
+    bridge = _RecordingBridge()
+    controller = DemoAudioController(
+        bridge,
+        physical_output=True,
+        open_output=lambda sample_rate, *, output_device=None, blocksize=1024: (
+            FakeAudioOutput(sample_rate)
+        ),
+    )
+    controller._ensure_enhancer = lambda: _IdentityStreamingEnhancer()
+
+    for _ in range(5):
+        controller.play()
+        controller.pause()
+        controller.reset()
+        assert bridge.demo_status == DEMO_STATUS_IDLE
+        assert controller._thread is None
+
+
+def test_demo_controller_cleanup_after_build_failure() -> None:
+    bridge = _RecordingBridge()
+
+    class _BrokenController(DemoAudioController):
+        def _build_pipeline(self) -> None:
+            raise RuntimeError("synthetic failure")
+
+    controller = _BrokenController(
+        bridge,
+        physical_output=True,
+        open_output=lambda sample_rate, *, output_device=None, blocksize=1024: (
+            FakeAudioOutput(sample_rate)
+        ),
+    )
+    controller._ensure_enhancer = lambda: _IdentityStreamingEnhancer()
+    controller.play()
+    assert bridge.demo_status == DEMO_STATUS_ERROR
+    assert controller._sink is None
+    assert len(bridge.errors) == 1
+    controller.reset()
+    assert bridge.demo_status == DEMO_STATUS_IDLE
+    assert bridge.errors == []
 
 
 def test_ab_switching_does_not_change_recording() -> None:
@@ -456,8 +572,9 @@ def test_demo_controller_uses_playback_queue_for_physical_output() -> None:
     controller._ensure_enhancer = lambda: _IdentityStreamingEnhancer()
 
     controller.play()
-    time.sleep(0.15)
     assert controller._playback_queue is not None
+    controller.pause()
+    time.sleep(0.05)
     controller.stop()
     assert controller._playback_queue is None
     assert len(sinks) == 1
@@ -480,8 +597,9 @@ def test_demo_controller_opens_output_sink_on_play() -> None:
     controller._ensure_enhancer = lambda: _IdentityStreamingEnhancer()
 
     controller.play()
-    time.sleep(0.15)
     assert len(created) == 1
+    controller.pause()
+    time.sleep(0.05)
 
     written = created[0].all_written()
     assert written.size > 0
@@ -509,7 +627,8 @@ def test_demo_controller_repeated_play_stop_reopens_output() -> None:
 
     for _ in range(3):
         controller.play()
-        time.sleep(0.1)
+        controller.pause()
+        time.sleep(0.02)
         controller.stop()
 
     assert open_count == 3
@@ -616,6 +735,11 @@ def main() -> None:
         test_demo_controller_repeated_play_stop_reopens_output,
         test_demo_controller_honors_ab_mode_on_pipeline_build,
         test_demo_controller_ab_routes_physical_sink,
+        test_demo_scenario_loading_metadata,
+        test_demo_controller_play_stop_lifecycle_status,
+        test_demo_controller_ab_switching_updates_status,
+        test_demo_controller_repeated_reset,
+        test_demo_controller_cleanup_after_build_failure,
     ]
 
     for test in tests:

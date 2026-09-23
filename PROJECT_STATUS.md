@@ -208,13 +208,14 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 | `qml/Main.qml` | Main telemetry console window | DONE | Waveforms, meters, sparklines, error banner |
 | `qml/Waveform.qml` | Canvas oscilloscope | DONE | Raw/enhanced waveform rendering |
 | `qml/Metrics.qml` | LED meters + metric grids | DONE | Peak/RMS, latency, buffer, drops, RTF |
-| `demo.py` | Demo mode replay controller | DONE | `ReplayAudioInput`, `DemoAudioController`, `SelectableAudioOutput`, `DemoPipelineOutput` — WAV → `StreamingPipeline`; persisted `_ab_mode` |
-| `demo_manifest.py` | Validated demo catalog loader | DONE | `load_validated_demo_catalog()` — file/RMS/length checks; raises `DemoManifestError` |
-| `demo_scenarios.json` | Demo scenario manifest (`demo-train-v1`) | DONE | Single training triplet: train_noisy / train_clean / train_enh |
+| `demo.py` | Demo mode replay controller | DONE | Demo Mode v2: `DemoAudioController` lifecycle (`IDLE`/`LOADING`/`PROCESSING`/`PLAYING RAW`/`PLAYING ENHANCED`/`STOPPED`/`ERROR`), `reset()`, re-entrant `stop()`/`reset()`; default model `DeepFilterNet3-Finetuned` |
+| `demo_state.py` | Demo status constants | DONE | `demo_state.py` — GUI-visible lifecycle labels |
+| `demo_manifest.py` | Validated demo catalog loader | DONE | `load_validated_demo_catalog()`; `scenario_source_display_path()`; `MISSING_DEMO_SCENARIO_CATEGORIES` documents unavailable SIH noise classes |
+| `demo_scenarios.json` | Demo scenario manifest (`demo-v2`) | DONE | Two validated mixed-speech scenarios (see Demo Mode v2 below) |
 | `playback_queue.py` | Bounded demo playback queue | DONE | `QueuedPlaybackOutput`, `ABQueuedPlaybackOutput` — decouples DF3 from PortAudio; A/B selected at dequeue time |
 | `session.py` | Demo + live session coordinator | DONE | `ApplicationSession` — mode switch, transport controls |
-| `qml/DemoControls.qml` | Demo transport + scenario UI | DONE | Play/pause/stop, A/B, mode switch, shortcuts |
-| `qml/DemoPanel.qml` | Factual demo status panel | DONE | Model, latency, RTF, benchmark summary |
+| `qml/DemoControls.qml` | Demo transport + scenario UI | DONE | **DEMO MODE** toggle, play/pause/stop/**reset**, A/B, shortcuts |
+| `qml/DemoPanel.qml` | Factual demo status panel | DONE | Demo Mode v2 state, scenario/source/duration/model, missing-category notice |
 | `qml/DemoButton.qml` | Reusable control button | DONE | |
 | `qml/PipelineChain.qml` | Subtle pipeline stage indicator | DONE | INPUT → CAPTURE → STREAM → DF3 → OUTPUT |
 
@@ -274,7 +275,7 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 | `test_dfn3_finetuned_live.py` | Fine-tuned live-path smoke | DONE | Registry + load/stream/flush/reset + `StreamingPipeline` fake I/O for pretrained and fine-tuned |
 | `test_gui_waveform.py` | GUI waveform downsampling tests | DONE | Empty/small/large chunk handling; no Qt or microphone required |
 | `run_demo_playback_timing.py` | Demo playback timing report | DONE | Write-interval stats for jitter diagnosis |
-| `test_gui_demo.py` | Demo mode streaming tests | DONE | train_* manifest, live B, playback queue, A/B sync + dequeue routing (21 tests) |
+| `test_gui_demo.py` | Demo mode streaming tests | DONE | Manifest v2, lifecycle status, reset, A/B status, failure cleanup (26 tests) |
 | `build_evaluation_fixtures.py` | Local manifest fixtures | DONE | Builds `tests/fixtures/evaluation_manifest/` at test time |
 | `evaluate.py` | Thin evaluation CLI | DONE | Wraps `drdo_anc.evaluation` |
 | `investigate_streaming_alignment.py` | Alignment investigation (read-only) | DONE | Offset sweep; not part of CI |
@@ -762,11 +763,39 @@ AudioInput → Enhancer → AudioOutput
 .venv\Scripts\python.exe scripts\run_live_gui.py --live-on-start --input-device 20 --output-device 18
 ```
 
-Default launch opens in **Demo Mode** (no microphone). Press **Play** to stream a recorded WAV through `StreamingPipeline` + DeepFilterNet3. Switch to **Live Mode** for hardware capture.
+Default launch opens in **Demo Mode v2** (no microphone). Press **Play** to stream a recorded WAV through `StreamingPipeline` + **DeepFilterNet3-Finetuned** (GUI default `--model`). Switch to **Live Mode** for hardware capture.
 
 Keyboard shortcuts: `Space` play/pause, `A` raw, `B` enhanced, `1`/`2` scenarios.
 
-### Demo scenarios (validated manifest `demo-train-v1`)
+### Demo Mode v2 (SIH PC-only presentation — 2026-09-23)
+
+| Item | Implementation |
+|------|----------------|
+| Mode entry | **DEMO MODE** button in `DemoControls.qml`; `ApplicationSession.set_demo_mode()` |
+| Default enhancer | `DeepFilterNet3-Finetuned` (`run_live_gui.py` default `--model`) |
+| Transport | Play, Pause, Stop, **Reset** (`resetDemo()` → `DemoAudioController.reset()`) |
+| A/B | **A Raw** = noisy WAV chunk; **B Enhanced** = live streaming enhancer output; switch does **not** rebuild pipeline or re-read WAV |
+| Visible status | `IDLE`, `LOADING`, `PROCESSING` (paused), `PLAYING RAW`, `PLAYING ENHANCED`, `STOPPED`, `ERROR` via `GUIBridge.demoStatus` |
+| Scenario panel | Scenario name, project-relative source path, sample rate, selected model, duration (seconds) |
+| Error handling | Exceptions → `set_error()`, safe teardown (`_safe_teardown`), status `ERROR`; GUI remains usable after Stop/Reset |
+| Live mode | Unchanged — separate `LiveAudioController` path |
+
+**Automated tests (2026-09-23):** `scripts/test_gui_demo.py` — **26/26 PASS** (scenario metadata, play/stop lifecycle, A/B status, repeated reset, missing-asset manifest rejection, cleanup after synthetic pipeline failure).
+
+**Full script regression (2026-09-23):** all `scripts/test_*.py` — **29 passed**, **0 failed**, **0 skipped** (integration-gated tests exit 0 without running heavy cases when env flags unset).
+
+#### Remaining limitations (Demo Mode v2)
+
+| Limitation | Detail |
+|------------|--------|
+| **Drone** | No validated mono demo WAV under `data/` — SIH drone corpus is zip-only (`Drone-Noise-Audio-set`). GUI lists this under *Unavailable scenarios*. |
+| **Vehicle/Engine** | No validated mono demo WAV under `data/` — corpus zip-only (`Vehicle-Engine-Wind-Electronic-Electrical-Noise`). |
+| **Impulsive noise** | No validated mono demo WAV under `data/` — firearms corpus zip-only. |
+| Mixed speech | **Two** manifest scenarios: `train_noisy_snr5.wav` (3 s) and `data/generated/clean_freesound_33711_noise_573577_snr0.wav` (~10.6 s). |
+| Adding defence-noise demos | Export or mix 48 kHz mono WAVs (≥1 s, manifest RMS/peak rules), append to `demo_scenarios.json`, restart GUI. |
+| Raspberry Pi / network audio | Out of scope for v2 (unchanged UDP demo). |
+
+### Demo scenarios (validated manifest `demo-v2`)
 
 Manifest: `src/drdo_anc/gui/demo_scenarios.json`.
 
@@ -778,7 +807,12 @@ Manifest: `src/drdo_anc/gui/demo_scenarios.json`.
 | **Noisy input (A / pipeline)** | `train_noisy_snr5.wav` | `data/train_noisy_snr5.wav`, 48 kHz mono, 3.0 s, RMS 0.137, peak 0.777; ~5 dB SNR vs clean |
 | **Enhanced reference (offline)** | `train_enh_snr5.wav` | `data/train_enh_snr5.wav`, 48 kHz mono, 3.0 s, RMS 0.112, peak 0.754; offline DF3 batch reference (not live B playback) |
 
-**Primary scenario:** `Training Speech — SNR 5 dB`
+| # | Label | Noisy input (pipeline + A) | Notes |
+|---|-------|----------------------------|-------|
+| 1 | Mixed Speech — SNR 5 dB | `data/train_noisy_snr5.wav` | Training triplet + offline `train_enh_snr5.wav` metrics |
+| 2 | Mixed Speech — Freesound SNR ~0 dB | `data/generated/clean_freesound_33711_noise_573577_snr0.wav` | Long-form mixture; offline DF3 ref for metrics |
+
+**Primary scenario:** `Mixed Speech — SNR 5 dB` (scenario 1)
 
 | Route | Physical playback | Waveform |
 |-------|-------------------|----------|
@@ -2132,7 +2166,7 @@ python scripts/run_live_enhancement.py --model DeepFilterNet3-Finetuned --input-
 
 ## LAST VERIFIED
 
-**2026-09-11**
+**2026-09-23** (Demo Mode v2 hardening + full `scripts/test_*.py` regression)
 
 ## CURRENT PROJECT STATE
 
@@ -2140,7 +2174,7 @@ The repository provides a complete **deterministic benchmark pipeline** from Hug
 
 A **USB-C + Bluetooth independent-device experiment** (Task 6, `scripts/run_usb_bluetooth_dual_mic_experiment.py`) measured EarPods (WASAPI 21 @ 48 kHz) + Boult Airbass (WASAPI 19 @ 16 kHz). Result: **Category C — poor reference** (essentially absent correlation, unstable delay, ~80 ms/min drift). **Do not integrate NLMS** with this pair; use synchronized 2-ch hardware instead.
 
-A **real-time telemetry GUI** (`src/drdo_anc/gui/`, `scripts/run_live_gui.py`) provides PySide6 + QML visualization of live passthrough and DeepFilterNet3 streaming, plus a **Demo Mode** with a **validated manifest** (`demo_manifest.py`) that replays curated local WAV assets through the same `StreamingPipeline` path for offline presentation. Demo scenario selection is **deterministic** (no random voice substitution). Demo **A / Raw** vs **B / Enhanced** routing is verified end-to-end (`ABQueuedPlaybackOutput` dequeue-time selection + controller/UI mode sync). A **live soak CLI** (`scripts/run_live_soak.py`) records continuous mic → DF3 → headphone metrics (RTF, overflows, buffering latency estimate). Status: **DONE** for Round-2 demo foundation; in-GUI device picker and GUI recording remain CLI-only.
+A **real-time telemetry GUI** (`src/drdo_anc/gui/`, `scripts/run_live_gui.py`) provides PySide6 + QML visualization of live passthrough and DeepFilterNet3 streaming, plus **Demo Mode v2** with a **validated manifest** (`demo-v2`) that replays curated local WAV assets through the same `StreamingPipeline` path. The GUI default model is **DeepFilterNet3-Finetuned**; live mode still supports both registered models. Demo transport includes play/pause/stop/**reset**, explicit lifecycle status, and A/B routing without restarting the source pipeline. Defence-noise categories (drone / vehicle / impulsive) are **documented as unavailable** until dedicated WAVs exist under `data/`. Status: **DONE** for SIH PC-only judging rehearsal; in-GUI recording remains CLI-only.
 
 An **isolated noise classifier v1** (`NoiseClassifier`) remains available for comparison. **Noise Classifier v2** (`SupervisedNoiseClassifier`, Extra Trees selected by validation macro F1) uses the same `noise-features-v1` vectors on a recording-safe stratified SIH-26 split and reaches test macro F1 **0.863** vs v1 **0.095** on the same held-out test set. **Not production-ready; not integrated into live DF3 or GUI.**
 
@@ -2154,6 +2188,6 @@ A **network-audio demo path** sends the existing live enhancer output over UDP t
 
 1. **Listen on headphones** — `python scripts/run_live_enhancement.py --model DeepFilterNet3-Finetuned --input-device 9 --output-device 8` (or GUI `--model DeepFilterNet3-Finetuned`); switch the default only after a demo check.
 2. **Obtain the fine-tune train file list** — without it, no SIH-26 eval can be labeled held-out from training.
-3. **Rehearse the physical demo** — `python scripts/run_live_gui.py`, scenarios `1`/`2`, Play, toggle A/B.
+3. **Rehearse Demo Mode v2** — `python scripts/run_live_gui.py` (default fine-tuned), scenarios `1`/`2`, Play, Pause, Reset, toggle A/B; confirm status line and error banner on bad assets.
 4. **Procure synchronized 2-ch ADC for dual-mic NLMS** — USB-C + Bluetooth remains Category C.
 5. **Network headphone demo** — on the Pi: `PYTHONPATH=src python3 scripts/run_network_audio_receiver.py --listen 0.0.0.0:5000 --output-device hw:2,0`. On Windows: `python scripts/run_live_enhancement.py --model DeepFilterNet3-Finetuned --input-device <id> --network-output <pi-ip>:5000`. Inference stays on Windows.

@@ -21,7 +21,7 @@ Item {
             Text { text: "MODE"; color: dim; font.pixelSize: 10; font.bold: true }
 
             DemoButton {
-                label: "DEMO"
+                label: "DEMO MODE"
                 active: guiBridge.operationMode === "demo"
                 onActivated: guiBridge.setDemoMode()
             }
@@ -130,7 +130,15 @@ Item {
             Text { text: "TRANSPORT"; color: dim; font.pixelSize: 10; font.bold: true }
             DemoButton { label: "Play"; onActivated: guiBridge.play() }
             DemoButton { label: "Pause"; onActivated: guiBridge.pause() }
-            DemoButton { label: "Stop"; onActivated: guiBridge.stop() }
+            DemoButton {
+                label: "Stop"
+                onActivated: guiBridge.stop()
+            }
+            DemoButton {
+                visible: guiBridge.operationMode === "demo"
+                label: "Reset"
+                onActivated: guiBridge.resetDemo()
+            }
 
             Item { Layout.fillWidth: true }
 

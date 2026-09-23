@@ -14,6 +14,7 @@ Window {
     Shortcut { sequence: "A"; onActivated: guiBridge.selectAbRaw() }
     Shortcut { sequence: "B"; onActivated: guiBridge.selectAbEnhanced() }
     Shortcut { sequence: "1"; onActivated: guiBridge.selectScenario(0) }
+    Shortcut { sequence: "2"; onActivated: guiBridge.selectScenario(1) }
 
     // Deep Premium Dark Palette
     property color black: "#05070A"

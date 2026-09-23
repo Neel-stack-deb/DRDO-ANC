@@ -99,6 +99,11 @@ class GUIBridge(QObject):
     self._demo_enhanced_ref_stoi = 0.0
     self._demo_noisy_pesq = 0.0
     self._demo_enhanced_ref_pesq = 0.0
+    self._demo_status = "IDLE"
+    self._demo_source_file = ""
+    self._demo_duration_s = 0.0
+    self._demo_model_name = ""
+    self._missing_demo_categories: list[str] = []
     self._input_device_labels: list[str] = []
     self._output_device_labels: list[str] = []
     self._model_labels: list[str] = []
@@ -269,6 +274,30 @@ class GUIBridge(QObject):
   def demoEnhancedRefPesq(self) -> float:
     return self._demo_enhanced_ref_pesq
 
+  @Property(str, notify=demoStateChanged)
+  def demoStatus(self) -> str:
+    return self._demo_status
+
+  @Property(str, notify=demoStateChanged)
+  def demoSourceFile(self) -> str:
+    return self._demo_source_file
+
+  @Property(float, notify=demoStateChanged)
+  def demoDurationSeconds(self) -> float:
+    return self._demo_duration_s
+
+  @Property(str, notify=demoStateChanged)
+  def demoModelName(self) -> str:
+    return self._demo_model_name
+
+  @Property(list, notify=demoStateChanged)
+  def missingDemoCategories(self) -> list[str]:
+    return list(self._missing_demo_categories)
+
+  @Property(bool, notify=demoStateChanged)
+  def isDemoMode(self) -> bool:
+    return self._operation_mode == "demo"
+
   @Property(list, notify=devicesChanged)
   def inputDeviceLabels(self) -> list[str]:
     return list(self._input_device_labels)
@@ -355,6 +384,37 @@ class GUIBridge(QObject):
     self._demo_output_label = f"{enhanced_playback} OUTPUT"
     self.demoStateChanged.emit()
 
+  def set_demo_status(self, status: str) -> None:
+    if self._demo_status == status:
+      return
+    self._demo_status = status
+    self.demoStateChanged.emit()
+
+  def set_demo_scenario_details(
+    self,
+    *,
+    label: str,
+    source_file: str,
+    sample_rate: int,
+    model_name: str,
+    duration_s: float,
+  ) -> None:
+    self._demo_scenario = label
+    self._demo_source_file = source_file
+    self._demo_duration_s = float(duration_s)
+    self._demo_model_name = model_name
+    self._latest_telemetry.sample_rate = int(sample_rate)
+    self.demoStateChanged.emit()
+    self.telemetryUpdated.emit()
+
+  def set_missing_demo_categories(self, messages: list[str]) -> None:
+    self._missing_demo_categories = list(messages)
+    self.demoStateChanged.emit()
+
+  def clear_demo_reference_metrics(self) -> None:
+    self._demo_metrics_available = False
+    self.demoStateChanged.emit()
+
   def set_demo_reference_metrics(self, metrics: dict[str, float]) -> None:
     self._demo_metrics_available = True
     self._demo_noisy_snr = float(metrics.get("noisy_snr", 0.0))
@@ -438,6 +498,11 @@ class GUIBridge(QObject):
   def stop(self) -> None:
     if self._session is not None:
       self._session.stop()
+
+  @Slot()
+  def resetDemo(self) -> None:
+    if self._session is not None:
+      self._session.reset_demo()
 
   @Slot(int)
   def selectScenario(self, index: int) -> None:

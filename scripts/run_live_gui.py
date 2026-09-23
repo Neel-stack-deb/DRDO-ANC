@@ -40,7 +40,7 @@ from drdo_anc.gui.session import ApplicationSession
 
 
 
-DEFAULT_MODEL_NAME = "DeepFilterNet3"
+DEFAULT_MODEL_NAME = "DeepFilterNet3-Finetuned"
 
 DEFAULT_READ_CHUNK_SIZE = 1024
 
