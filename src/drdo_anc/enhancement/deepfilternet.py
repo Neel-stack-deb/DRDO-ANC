@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 
 import numpy as np
 import torch
@@ -57,13 +58,21 @@ class DeepFilterNetEnhancer(Enhancer):
 
         project_root = Path(__file__).resolve().parents[3]
 
+        native_library = (
+            "df.dll"
+            if sys.platform == "win32"
+            else "libdf.dylib"
+            if sys.platform == "darwin"
+            else "libdf.so"
+        )
+
         dll_path = (
             project_root
             / "external"
             / "DeepFilterNet"
             / "target"
             / "release"
-            / "df.dll"
+            / native_library
         )
 
         model_path = (

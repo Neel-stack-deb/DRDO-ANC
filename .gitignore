@@ -8,6 +8,10 @@ models/*.pth
 models/*.pt
 models/*.onnx
 
+# Checked-in fine-tuned inference artifact. Keep unrelated model exports ignored.
+!models/dfn3_finetuned/live-finetuned/
+!models/dfn3_finetuned/live-finetuned/**
+
 *.wav
 *.mp3
 *.flac

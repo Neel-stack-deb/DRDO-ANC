@@ -8,6 +8,7 @@ written under ``data/cache/`` so the original export tree stays intact.
 from __future__ import annotations
 
 import tarfile
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -83,13 +84,20 @@ def finetuned_onnx_dir(artifact_root: Path | None = None) -> Path:
 
 
 def default_native_dll_path() -> Path:
+    native_library = (
+        "df.dll"
+        if sys.platform == "win32"
+        else "libdf.dylib"
+        if sys.platform == "darwin"
+        else "libdf.so"
+    )
     return (
         project_root()
         / "external"
         / "DeepFilterNet"
         / "target"
         / "release"
-        / "df.dll"
+        / native_library
     )
 
 
