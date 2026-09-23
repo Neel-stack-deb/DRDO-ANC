@@ -52,7 +52,8 @@ Window {
             Text {
                 text: guiBridge.operationMode === "live"
                     ? ("LIVE · " + guiBridge.liveStatus)
-                    : (guiBridge.operationMode === "demo" ? "DEMO" : "OFFLINE")
+                    : (guiBridge.operationMode === "benchmark" ? "BENCHMARK"
+                    : (guiBridge.operationMode === "demo" ? "DEMO" : "OFFLINE"))
                 color: cyan
                 font.pixelSize: 48
                 font.bold: true
@@ -84,17 +85,25 @@ Window {
 
         DemoControls {
             Layout.fillWidth: true
-            Layout.preferredHeight: 230
+            Layout.preferredHeight: 250
+        }
+
+        BenchmarkPanel {
+            Layout.fillWidth: true
+            Layout.preferredHeight: guiBridge.isBenchmarkMode ? 340 : 0
+            visible: guiBridge.isBenchmarkMode
         }
 
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 16
+            visible: !guiBridge.isBenchmarkMode
 
             Item {
                 Layout.preferredWidth: 260
                 Layout.fillHeight: true
+                visible: !guiBridge.isBenchmarkMode
 
                 DemoPanel {
                     anchors.fill: parent

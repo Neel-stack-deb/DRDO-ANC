@@ -31,6 +31,11 @@ Item {
                 enabled: guiBridge.liveCanStart || guiBridge.operationMode === "live"
                 onActivated: guiBridge.setLiveMode()
             }
+            DemoButton {
+                label: "BENCHMARK"
+                active: guiBridge.operationMode === "benchmark"
+                onActivated: guiBridge.setBenchmarkMode()
+            }
 
             Item { Layout.fillWidth: true }
             Text { text: guiBridge.demoScenario; color: cyan; font.pixelSize: 10 }

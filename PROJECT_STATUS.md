@@ -215,10 +215,13 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 | `playback_queue.py` | Bounded demo playback queue | DONE | `QueuedPlaybackOutput`, `ABQueuedPlaybackOutput` — decouples DF3 from PortAudio; A/B selected at dequeue time |
 | `live_controller.py` | Live mic → pipeline → headphones | DONE | Job 2: `LiveAudioController` — `IDLE`/`STARTING`/`LIVE`/`STOPPING`/`ERROR`, idempotent start/stop, `recover()`, injectable I/O for tests |
 | `live_state.py` | Live status constants | DONE | GUI lifecycle labels |
+| `benchmark_results.py` | Offline benchmark JSON loader | DONE | Job 3: reads `dfn3_finetuned_compare` + `dfn3_finetuned_recording_safe` reports; no inference |
+| `benchmark_bridge.py` | Benchmark → GUI bridge mapping | DONE | Context text, metric tables, hold-out disclaimer |
 | `session.py` | Demo + live session coordinator | DONE | `ApplicationSession` — validates devices/sample rate before live start; `recover_live()` / `stop_live()` |
 | `qml/DemoControls.qml` | Demo transport + scenario UI | DONE | **DEMO MODE** toggle, play/pause/stop/**reset**, A/B, shortcuts |
 | `qml/DemoPanel.qml` | Factual demo status panel | DONE | Demo Mode v2 state, scenario/source/duration/model, missing-category notice |
 | `qml/LivePanel.qml` | Live mode status panel | DONE | Devices (name/API/channels/rate), model, RTF, input overflows |
+| `qml/BenchmarkPanel.qml` | Offline benchmark / results screen | DONE | Read-only tables, SI-SDR bar chart, metric glossary, evaluation metadata |
 | `qml/DemoButton.qml` | Reusable control button | DONE | |
 | `qml/PipelineChain.qml` | Subtle pipeline stage indicator | DONE | INPUT → CAPTURE → STREAM → DF3 → OUTPUT |
 
@@ -280,6 +283,7 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 | `run_demo_playback_timing.py` | Demo playback timing report | DONE | Write-interval stats for jitter diagnosis |
 | `test_gui_demo.py` | Demo mode streaming tests | DONE | Manifest v2, lifecycle status, reset, A/B status, failure cleanup (26 tests) |
 | `test_gui_live_controller.py` | Live Mode controller tests | DONE | Validation messages, start/stop/idempotency, error recovery (10 tests) |
+| `test_gui_benchmark.py` | Benchmark results screen tests | DONE | Loader, fixtures, missing/malformed JSON, artifact cross-check (7 tests) |
 | `build_evaluation_fixtures.py` | Local manifest fixtures | DONE | Builds `tests/fixtures/evaluation_manifest/` at test time |
 | `evaluate.py` | Thin evaluation CLI | DONE | Wraps `drdo_anc.evaluation` |
 | `investigate_streaming_alignment.py` | Alignment investigation (read-only) | DONE | Offset sweep; not part of CI |
@@ -828,6 +832,35 @@ python scripts/run_live_enhancement.py --model DeepFilterNet3-Finetuned --input-
 | Live SI-SDR/STOI/PESQ | Not shown (no clean reference in live path) |
 | Device hot-unplug | Surfaces as stream error → `ERROR`; user clicks **Recover** and refreshes devices |
 | Raspberry Pi / UDP playback | Out of scope (unchanged) |
+
+### Job 3 — Benchmark / Results Screen (2026-09-23)
+
+| Item | Implementation |
+|------|----------------|
+| Mode | **BENCHMARK** button alongside Demo / Live; read-only — does not start audio |
+| Data source | `data/benchmark_results/dfn3_finetuned_compare/pretrained_full.json` + `finetuned_full.json` (development, `sih26-eval-v1`); `data/benchmark_results/dfn3_finetuned_recording_safe/*.json` (recording-disjoint, `sih26-finetuned-recording-safe-v1`) |
+| Aggregation | `summary_overall` means from each report; paired deltas via `compare_benchmark_reports()` (same as `run_dfn3_finetuned_benchmark.py`) |
+| UI | `BenchmarkPanel.qml` — **OFFLINE BENCHMARK RESULTS** banner, development context bullets, comparison table, SI-SDR improvement, paired win counts, simple SI-SDR bar chart, separate recording-disjoint section with `training_holdout_status = unverified` notice |
+| Live separation | Live panel shows RTF/overflows only; benchmark metrics never shown as live mic measurements |
+| Missing data | Message *Benchmark results unavailable.* + reason; no invented defaults |
+| Startup | JSON read only at session init — **does not** run benchmarks |
+
+**Displayed development values (from local artifacts, 2026-09-23 verify):**
+
+| Metric | Pretrained | Fine-tuned |
+|--------|------------|------------|
+| SI-SDR | 12.71 dB | 14.95 dB |
+| STOI | 0.667 | 0.708 |
+| PESQ | 1.850 | 2.119 |
+| SNR | 12.30 dB | 15.01 dB |
+
+Paired SI-SDR improvement **+2.24 dB**; **118 / 120** improved (2 degraded).
+
+**Recording-disjoint (when artifacts present):** SI-SDR **12.29 → 15.47 dB**, improvement **+3.18 dB**, **116 / 116** paired successful rows per model (**116 / 120** design; 4 mixture failures documented in `PROJECT_STATUS.md` §Step 15).
+
+**Tests:** `scripts/test_gui_benchmark.py` — **7/7 PASS**; full `scripts/test_*.py` regression after Job 3.
+
+**Limitations:** Result JSON under `data/benchmark_results/` is local/gitignored — machines without prior benchmark runs show unavailable. GUI does not re-run or refresh benchmarks (restart app after new JSON). PESQ in docs §18 used 1.851 vs compare table 1.850 — artifact uses **1.850** (3 dp).
 
 #### Remaining limitations (Demo Mode v2)
 
@@ -2211,7 +2244,7 @@ python scripts/run_live_enhancement.py --model DeepFilterNet3-Finetuned --input-
 
 ## LAST VERIFIED
 
-**2026-09-23** (Demo Mode v2 + Job 2 Live Mode hardening; full `scripts/test_*.py` regression)
+**2026-09-23** (Demo Mode v2, Job 2 Live Mode, Job 3 Benchmark screen; full `scripts/test_*.py` regression)
 
 ## CURRENT PROJECT STATE
 

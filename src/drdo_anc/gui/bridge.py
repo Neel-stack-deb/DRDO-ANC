@@ -36,6 +36,7 @@ class GUIBridge(QObject):
   errorChanged = Signal()
   demoStateChanged = Signal()
   liveStateChanged = Signal()
+  benchmarkStateChanged = Signal()
   devicesChanged = Signal()
 
   def __init__(self, fps: int = 60) -> None:
@@ -119,6 +120,13 @@ class GUIBridge(QObject):
     self._live_input_summary = ""
     self._live_output_summary = ""
     self._live_input_overflows = 0
+    self._benchmark_loaded = False
+    self._benchmark_unavailable_message = ""
+    self._benchmark_partial_warning = ""
+    self._benchmark_pretrained_model = "DeepFilterNet3"
+    self._benchmark_finetuned_model = "DeepFilterNet3-Finetuned"
+    self._dev_benchmark: dict = {"available": False}
+    self._rd_benchmark: dict = {"available": False}
 
   def start_timer(self) -> None:
     interval = int(1000 / self._fps)
@@ -319,6 +327,174 @@ class GUIBridge(QObject):
   def isDemoMode(self) -> bool:
     return self._operation_mode == "demo"
 
+  @Property(bool, notify=benchmarkStateChanged)
+  def isBenchmarkMode(self) -> bool:
+    return self._operation_mode == "benchmark"
+
+  @Property(bool, notify=benchmarkStateChanged)
+  def benchmarkLoaded(self) -> bool:
+    return self._benchmark_loaded
+
+  @Property(str, notify=benchmarkStateChanged)
+  def benchmarkUnavailableMessage(self) -> str:
+    return self._benchmark_unavailable_message
+
+  @Property(str, notify=benchmarkStateChanged)
+  def benchmarkPartialWarning(self) -> str:
+    return self._benchmark_partial_warning
+
+  @Property(str, notify=benchmarkStateChanged)
+  def benchmarkPretrainedModel(self) -> str:
+    return self._benchmark_pretrained_model
+
+  @Property(str, notify=benchmarkStateChanged)
+  def benchmarkFinetunedModel(self) -> str:
+    return self._benchmark_finetuned_model
+
+  @Property(bool, notify=benchmarkStateChanged)
+  def devBenchmarkAvailable(self) -> bool:
+    return bool(self._dev_benchmark.get("available"))
+
+  @Property(str, notify=benchmarkStateChanged)
+  def devBenchmarkTitle(self) -> str:
+    return str(self._dev_benchmark.get("title", ""))
+
+  @Property(str, notify=benchmarkStateChanged)
+  def devBenchmarkContext(self) -> str:
+    return str(self._dev_benchmark.get("context", ""))
+
+  @Property(str, notify=benchmarkStateChanged)
+  def devRulesVersion(self) -> str:
+    return str(self._dev_benchmark.get("rules_version", ""))
+
+  @Property(str, notify=benchmarkStateChanged)
+  def devEvaluationModes(self) -> str:
+    return str(self._dev_benchmark.get("evaluation_modes", ""))
+
+  @Property(int, notify=benchmarkStateChanged)
+  def devPairedEvaluations(self) -> int:
+    return int(self._dev_benchmark.get("paired_evaluations", 0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def devPretrainedSiSdr(self) -> float:
+    return float(self._dev_benchmark.get("pretrained_si_sdr", 0.0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def devFinetunedSiSdr(self) -> float:
+    return float(self._dev_benchmark.get("finetuned_si_sdr", 0.0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def devPretrainedStoi(self) -> float:
+    return float(self._dev_benchmark.get("pretrained_stoi", 0.0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def devFinetunedStoi(self) -> float:
+    return float(self._dev_benchmark.get("finetuned_stoi", 0.0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def devPretrainedPesq(self) -> float:
+    return float(self._dev_benchmark.get("pretrained_pesq", 0.0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def devFinetunedPesq(self) -> float:
+    return float(self._dev_benchmark.get("finetuned_pesq", 0.0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def devPretrainedSnr(self) -> float:
+    return float(self._dev_benchmark.get("pretrained_snr", 0.0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def devFinetunedSnr(self) -> float:
+    return float(self._dev_benchmark.get("finetuned_snr", 0.0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def devSiSdrImprovement(self) -> float:
+    return float(self._dev_benchmark.get("si_sdr_improvement", 0.0))
+
+  @Property(int, notify=benchmarkStateChanged)
+  def devSiSdrImproved(self) -> int:
+    return int(self._dev_benchmark.get("si_sdr_improved", 0))
+
+  @Property(int, notify=benchmarkStateChanged)
+  def devSiSdrDegraded(self) -> int:
+    return int(self._dev_benchmark.get("si_sdr_degraded", 0))
+
+  @Property(str, notify=benchmarkStateChanged)
+  def devPretrainedSource(self) -> str:
+    return str(self._dev_benchmark.get("pretrained_source", ""))
+
+  @Property(str, notify=benchmarkStateChanged)
+  def devFinetunedSource(self) -> str:
+    return str(self._dev_benchmark.get("finetuned_source", ""))
+
+  @Property(bool, notify=benchmarkStateChanged)
+  def rdBenchmarkAvailable(self) -> bool:
+    return bool(self._rd_benchmark.get("available"))
+
+  @Property(str, notify=benchmarkStateChanged)
+  def rdBenchmarkTitle(self) -> str:
+    return str(self._rd_benchmark.get("title", ""))
+
+  @Property(str, notify=benchmarkStateChanged)
+  def rdHoldoutNote(self) -> str:
+    return str(self._rd_benchmark.get("holdout_note", ""))
+
+  @Property(str, notify=benchmarkStateChanged)
+  def rdRulesVersion(self) -> str:
+    return str(self._rd_benchmark.get("rules_version", ""))
+
+  @Property(int, notify=benchmarkStateChanged)
+  def rdPairedEvaluations(self) -> int:
+    return int(self._rd_benchmark.get("paired_evaluations", 0))
+
+  @Property(int, notify=benchmarkStateChanged)
+  def rdSuccessfulEvaluations(self) -> int:
+    return int(self._rd_benchmark.get("successful_evaluations", 0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def rdPretrainedSiSdr(self) -> float:
+    return float(self._rd_benchmark.get("pretrained_si_sdr", 0.0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def rdFinetunedSiSdr(self) -> float:
+    return float(self._rd_benchmark.get("finetuned_si_sdr", 0.0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def rdPretrainedStoi(self) -> float:
+    return float(self._rd_benchmark.get("pretrained_stoi", 0.0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def rdFinetunedStoi(self) -> float:
+    return float(self._rd_benchmark.get("finetuned_stoi", 0.0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def rdPretrainedPesq(self) -> float:
+    return float(self._rd_benchmark.get("pretrained_pesq", 0.0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def rdFinetunedPesq(self) -> float:
+    return float(self._rd_benchmark.get("finetuned_pesq", 0.0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def rdPretrainedSnr(self) -> float:
+    return float(self._rd_benchmark.get("pretrained_snr", 0.0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def rdFinetunedSnr(self) -> float:
+    return float(self._rd_benchmark.get("finetuned_snr", 0.0))
+
+  @Property(float, notify=benchmarkStateChanged)
+  def rdSiSdrImprovement(self) -> float:
+    return float(self._rd_benchmark.get("si_sdr_improvement", 0.0))
+
+  @Property(int, notify=benchmarkStateChanged)
+  def rdSiSdrImproved(self) -> int:
+    return int(self._rd_benchmark.get("si_sdr_improved", 0))
+
+  @Property(int, notify=benchmarkStateChanged)
+  def rdSiSdrDegraded(self) -> int:
+    return int(self._rd_benchmark.get("si_sdr_degraded", 0))
+
   @Property(list, notify=devicesChanged)
   def inputDeviceLabels(self) -> list[str]:
     return list(self._input_device_labels)
@@ -480,6 +656,31 @@ class GUIBridge(QObject):
   def set_operation_mode(self, mode: str) -> None:
     self._operation_mode = mode
     self.demoStateChanged.emit()
+    self.benchmarkStateChanged.emit()
+
+  def set_benchmark_presentation(
+    self,
+    *,
+    loaded: bool,
+    unavailable_message: str,
+    pretrained_model: str,
+    finetuned_model: str,
+    development: dict,
+    recording_disjoint: dict,
+  ) -> None:
+    self._benchmark_loaded = bool(loaded)
+    self._benchmark_unavailable_message = unavailable_message
+    self._benchmark_pretrained_model = pretrained_model
+    self._benchmark_finetuned_model = finetuned_model
+    self._dev_benchmark = dict(development)
+    self._rd_benchmark = dict(recording_disjoint)
+    dev_ok = bool(development.get("available"))
+    rd_ok = bool(recording_disjoint.get("available"))
+    if loaded and unavailable_message and (dev_ok or rd_ok):
+      self._benchmark_partial_warning = unavailable_message
+    else:
+      self._benchmark_partial_warning = ""
+    self.benchmarkStateChanged.emit()
 
   def set_playback_state(self, state: str) -> None:
     self._playback_state = state
@@ -527,6 +728,11 @@ class GUIBridge(QObject):
   def setLiveMode(self) -> None:
     if self._session is not None:
       self._session.set_live_mode()
+
+  @Slot()
+  def setBenchmarkMode(self) -> None:
+    if self._session is not None:
+      self._session.set_benchmark_mode()
 
   @Slot()
   def play(self) -> None:

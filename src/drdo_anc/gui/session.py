@@ -6,6 +6,8 @@ from PySide6.QtCore import QSettings
 
 from drdo_anc.enhancement import create_enhancer, list_models
 from drdo_anc.gui.bridge import GUIBridge
+from drdo_anc.gui.benchmark_bridge import apply_benchmark_presentation
+from drdo_anc.gui.benchmark_results import load_gui_benchmark_presentation
 from drdo_anc.gui.demo import DemoAudioController, load_benchmark_summary
 from drdo_anc.gui.demo_manifest import (
     DemoManifestError,
@@ -167,6 +169,10 @@ class ApplicationSession:
         self._bridge.set_demo_status("IDLE")
         self._bridge.set_live_status(LIVE_STATUS_IDLE)
         self._publish_live_device_summaries()
+        apply_benchmark_presentation(
+            bridge,
+            load_gui_benchmark_presentation(),
+        )
 
     def _apply_scenario_to_bridge(self, scenario) -> None:
         self._bridge.set_demo_scenario_details(
@@ -376,6 +382,18 @@ class ApplicationSession:
         self._settings.setValue("audio/show_all_devices", self._show_all_devices)
         self.refresh_devices()
 
+    def set_benchmark_mode(self) -> None:
+        if self._mode == "benchmark":
+            return
+
+        self._demo_controller.stop()
+        self._live_controller.stop()
+        self._bridge.set_devices_locked(False)
+        self._mode = "benchmark"
+        self._bridge.set_operation_mode("benchmark")
+        self._bridge.set_audio_status("Ready")
+        self._bridge.clear_error()
+
     def set_demo_mode(self) -> None:
         if self._mode == "demo":
             return
@@ -444,6 +462,8 @@ class ApplicationSession:
         self._bridge.set_live_input_overflows(0)
 
     def play(self) -> None:
+        if self._mode == "benchmark":
+            return
         if self._mode == "demo":
             self._demo_controller.play()
         else:
@@ -454,6 +474,8 @@ class ApplicationSession:
             self._demo_controller.pause()
 
     def stop(self) -> None:
+        if self._mode == "benchmark":
+            return
         if self._mode == "demo":
             self._demo_controller.stop()
             return
