@@ -26,7 +26,17 @@ from drdo_anc.gui.demo_manifest import (
     get_scenario_by_index,
     load_validated_demo_catalog,
     project_root,
+    scenario_source_display_path,
 )
+from drdo_anc.gui.demo_state import (
+    DEMO_STATUS_ERROR,
+    DEMO_STATUS_IDLE,
+    DEMO_STATUS_LOADING,
+    DEMO_STATUS_PROCESSING,
+    DEMO_STATUS_STOPPED,
+    playing_status_for_ab_mode,
+)
+from drdo_anc.enhancement.finetuned import FINETUNED_MODEL_NAME
 
 DEFAULT_CHUNK_SIZE = 1024
 DEFAULT_PLAYBACK_QUEUE_CHUNKS = DEFAULT_MAX_CHUNKS
@@ -351,7 +361,7 @@ class DemoAudioController:
         self,
         bridge,
         *,
-        model_name: str = "DeepFilterNet3",
+        model_name: str = FINETUNED_MODEL_NAME,
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         output_device: int | str | None = None,
         physical_output: bool = True,
@@ -380,8 +390,11 @@ class DemoAudioController:
         self._reference_enhanced_audio = None
         self._clean_reference_audio = None
         self._thread: threading.Thread | None = None
-        self._session_lock = threading.Lock()
+        self._session_lock = threading.RLock()
         self._running = False
+        self._paused = False
+        self._publish_scenario_metadata(self._current_scenario())
+        self._set_demo_status(DEMO_STATUS_IDLE)
 
     def set_output_device(self, output_device: int | str | None) -> None:
         """Use this output device the next time demo playback starts."""
@@ -408,6 +421,75 @@ class DemoAudioController:
 
     def _current_scenario(self) -> DemoScenario:
         return get_scenario_by_index(self._catalog, self._scenario_index)
+
+    def _set_demo_status(self, status: str) -> None:
+        setter = getattr(self._bridge, "set_demo_status", None)
+        if setter is not None:
+            setter(status)
+
+    def _publish_scenario_metadata(self, scenario: DemoScenario) -> None:
+        setter = getattr(self._bridge, "set_demo_scenario_details", None)
+        if setter is not None:
+            setter(
+                label=scenario.label,
+                source_file=scenario_source_display_path(scenario),
+                sample_rate=scenario.sample_rate,
+                model_name=self._model_name,
+                duration_s=scenario.duration_s,
+            )
+
+    def _sync_playing_status(self) -> None:
+        if not self._running:
+            return
+        if self._paused:
+            self._set_demo_status(DEMO_STATUS_PROCESSING)
+            return
+        self._set_demo_status(playing_status_for_ab_mode(self._ab_mode))
+
+    def _safe_teardown(self, *, join_thread: bool = True) -> None:
+        if self._pipeline is not None:
+            try:
+                self._pipeline.request_stop()
+            except Exception:
+                traceback.print_exc()
+
+        if self._replay_input is not None:
+            try:
+                self._replay_input.stop()
+            except Exception:
+                traceback.print_exc()
+
+        if (
+            join_thread
+            and self._thread is not None
+            and self._thread.is_alive()
+            and threading.current_thread() is not self._thread
+        ):
+            self._thread.join(timeout=5.0)
+
+        if self._sink is not None:
+            try:
+                self._sink.close()
+            except Exception:
+                traceback.print_exc()
+
+        if self._enhancer is not None:
+            try:
+                self._enhancer.reset()
+            except Exception:
+                traceback.print_exc()
+
+        self._pipeline = None
+        self._replay_input = None
+        self._selectable_output = None
+        self._playback_queue = None
+        self._hardware_sink = None
+        self._sink = None
+        self._reference_enhanced_audio = None
+        self._clean_reference_audio = None
+        self._thread = None
+        self._running = False
+        self._paused = False
 
     def _load_current_audio(self) -> tuple[np.ndarray, int]:
         return load_scenario_audio(self._current_scenario())
@@ -535,12 +617,15 @@ class DemoAudioController:
         )
 
     def set_scenario_index(self, index: int) -> None:
-        scenario = get_scenario_by_index(self._catalog, index)
-        self.stop()
-        self._scenario_index = index
-        self._bridge.set_demo_scenario(scenario.label)
-        self._bridge.set_selected_scenario_index(index)
-        self._bridge.clear_error()
+        with self._session_lock:
+            scenario = get_scenario_by_index(self._catalog, index)
+            self.stop()
+            self._scenario_index = index
+            self._bridge.set_demo_scenario(scenario.label)
+            self._bridge.set_selected_scenario_index(index)
+            self._publish_scenario_metadata(scenario)
+            self._bridge.clear_error()
+            self._set_demo_status(DEMO_STATUS_IDLE)
 
     def set_ab_mode(self, mode: str) -> None:
         if mode not in {"raw", "enhanced"}:
@@ -552,6 +637,7 @@ class DemoAudioController:
             self._selectable_output.set_mode(mode)
 
         self._bridge.set_ab_mode(mode)
+        self._sync_playing_status()
 
     def play(self) -> None:
         with self._session_lock:
@@ -560,19 +646,28 @@ class DemoAudioController:
                     self._bridge.set_pipeline_stage("stream")
                     self._bridge.set_audio_status("Playing")
                     self._bridge.set_playback_state("playing")
+                    self._paused = False
                     self._replay_input.play()
+                    self._sync_playing_status()
                 return
+
+            self._set_demo_status(DEMO_STATUS_LOADING)
+            self._bridge.clear_error()
 
             try:
                 self._build_pipeline()
             except DemoManifestError as exc:
+                self._safe_teardown()
                 self._bridge.set_error(f"Demo asset invalid: {exc}")
                 self._bridge.set_audio_status("Error")
+                self._set_demo_status(DEMO_STATUS_ERROR)
                 traceback.print_exc()
                 return
             except Exception as exc:
+                self._safe_teardown()
                 self._bridge.set_error(f"Demo startup failed: {exc}")
                 self._bridge.set_audio_status("Error")
+                self._set_demo_status(DEMO_STATUS_ERROR)
                 traceback.print_exc()
                 return
 
@@ -583,24 +678,33 @@ class DemoAudioController:
             replay_input = self._replay_input
 
             def run() -> None:
+                errored = False
                 self._running = True
+                self._paused = False
                 self._bridge.set_pipeline_stage("capture")
                 self._bridge.set_audio_status("Playing")
                 self._bridge.set_playback_state("playing")
+                self._sync_playing_status()
                 replay_input.play()
 
                 try:
                     pipeline.run()
                 except Exception as exc:
+                    errored = True
                     self._bridge.set_error(f"Demo pipeline error: {exc}")
                     self._bridge.set_audio_status("Error")
+                    self._set_demo_status(DEMO_STATUS_ERROR)
                     traceback.print_exc()
                 finally:
-                    self._running = False
-                    replay_input.pause()
+                    with self._session_lock:
+                        self._safe_teardown(join_thread=False)
                     self._bridge.set_playback_state("stopped")
                     self._bridge.set_audio_status("Stopped")
                     self._bridge.set_pipeline_stage("input")
+                    if errored:
+                        self._set_demo_status(DEMO_STATUS_ERROR)
+                    else:
+                        self._set_demo_status(DEMO_STATUS_STOPPED)
                     if self._on_finished is not None:
                         self._on_finished()
 
@@ -612,48 +716,40 @@ class DemoAudioController:
             self._thread.start()
 
     def pause(self) -> None:
-        if self._replay_input is not None:
-            self._replay_input.pause()
-            self._bridge.set_playback_state("paused")
-            self._bridge.set_audio_status("Paused")
-            self._bridge.set_pipeline_stage("stream")
+        with self._session_lock:
+            if self._replay_input is not None:
+                self._replay_input.pause()
+                self._paused = True
+                self._bridge.set_playback_state("paused")
+                self._bridge.set_audio_status("Paused")
+                self._bridge.set_pipeline_stage("stream")
+                self._set_demo_status(DEMO_STATUS_PROCESSING)
 
     def stop(self) -> None:
-        if self._pipeline is not None:
-            self._pipeline.request_stop()
+        with self._session_lock:
+            self._safe_teardown()
+            self._bridge.set_playback_state("stopped")
+            self._bridge.set_audio_status("Stopped")
+            self._bridge.set_pipeline_stage("input")
+            self._set_demo_status(DEMO_STATUS_STOPPED)
 
-        if self._replay_input is not None:
-            self._replay_input.stop()
+    def reset(self) -> None:
+        """Stop playback, release devices, and return to a clean idle state."""
 
-        if self._thread is not None and self._thread.is_alive():
-            self._thread.join(timeout=5.0)
-
-        if self._sink is not None:
-            try:
-                self._sink.close()
-            except Exception:
-                traceback.print_exc()
-
-        if self._enhancer is not None:
-            self._enhancer.reset()
-
-        self._pipeline = None
-        self._replay_input = None
-        self._selectable_output = None
-        self._playback_queue = None
-        self._hardware_sink = None
-        self._sink = None
-        self._reference_enhanced_audio = None
-        self._clean_reference_audio = None
-        self._thread = None
-        self._running = False
-        self._bridge.set_playback_state("stopped")
-        self._bridge.set_audio_status("Stopped")
-        self._bridge.set_pipeline_stage("input")
+        with self._session_lock:
+            self._safe_teardown()
+            self._bridge.set_playback_state("stopped")
+            self._bridge.set_audio_status("Ready")
+            self._bridge.set_pipeline_stage("input")
+            self._bridge.clear_error()
+            self._publish_scenario_metadata(self._current_scenario())
+            self._set_demo_status(DEMO_STATUS_IDLE)
 
     def shutdown(self) -> None:
-        self.stop()
-        self._enhancer = None
+        with self._session_lock:
+            self.stop()
+            self._enhancer = None
+            self._set_demo_status(DEMO_STATUS_IDLE)
 
 
 def load_benchmark_summary() -> tuple[int | None, int | None]:

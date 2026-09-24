@@ -21,7 +21,7 @@ Item {
             Text { text: "MODE"; color: dim; font.pixelSize: 10; font.bold: true }
 
             DemoButton {
-                label: "DEMO"
+                label: "DEMO MODE"
                 active: guiBridge.operationMode === "demo"
                 onActivated: guiBridge.setDemoMode()
             }
@@ -30,6 +30,11 @@ Item {
                 active: guiBridge.operationMode === "live"
                 enabled: guiBridge.liveCanStart || guiBridge.operationMode === "live"
                 onActivated: guiBridge.setLiveMode()
+            }
+            DemoButton {
+                label: "BENCHMARK"
+                active: guiBridge.operationMode === "benchmark"
+                onActivated: guiBridge.setBenchmarkMode()
             }
 
             Item { Layout.fillWidth: true }
@@ -127,10 +132,91 @@ Item {
             Layout.fillWidth: true
             spacing: 8
 
+            Text { text: "SIH SAFETY"; color: dim; font.pixelSize: 10; font.bold: true }
+            DemoButton {
+                label: "DEMO PREFLIGHT"
+                onActivated: guiBridge.runDemoPreflight()
+            }
+            DemoButton {
+                label: "RESET DEMO"
+                onActivated: guiBridge.emergencyResetDemo()
+            }
+            Item { Layout.fillWidth: true }
+            Text {
+                visible: guiBridge.preflightHasRun
+                text: guiBridge.preflightSummary
+                color: guiBridge.preflightStatus === "FAILED" ? "#FF5577"
+                    : (guiBridge.preflightStatus === "WARNING" ? "#FFAA44" : cyan)
+                font.pixelSize: 11
+                font.bold: true
+            }
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 2
+            visible: guiBridge.preflightHasRun
+
+            Text {
+                text: "DEMO PREFLIGHT"
+                color: dim
+                font.pixelSize: 10
+                font.bold: true
+            }
+            Repeater {
+                model: guiBridge.preflightCheckLines
+                delegate: Text {
+                    text: modelData
+                    color: modelData.startsWith("✓") ? "#88CCAA" : "#FF5577"
+                    font.pixelSize: 10
+                    font.family: "Consolas"
+                }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+            visible: guiBridge.liveFallbackOffered
+
+            Text {
+                Layout.fillWidth: true
+                text: guiBridge.liveFallbackMessage
+                color: "#FF5577"
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
+            }
+            DemoButton {
+                label: "TRY AGAIN"
+                onActivated: guiBridge.tryLiveAgain()
+            }
+            DemoButton {
+                label: "USE RECORDED DEMO"
+                onActivated: guiBridge.useRecordedDemo()
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+
             Text { text: "TRANSPORT"; color: dim; font.pixelSize: 10; font.bold: true }
             DemoButton { label: "Play"; onActivated: guiBridge.play() }
             DemoButton { label: "Pause"; onActivated: guiBridge.pause() }
-            DemoButton { label: "Stop"; onActivated: guiBridge.stop() }
+            DemoButton {
+                label: "Stop"
+                onActivated: guiBridge.stop()
+            }
+            DemoButton {
+                visible: guiBridge.operationMode === "demo"
+                label: "Reset"
+                onActivated: guiBridge.resetDemo()
+            }
+            DemoButton {
+                visible: guiBridge.operationMode === "live" && guiBridge.liveStatus === "ERROR"
+                label: "Recover"
+                onActivated: guiBridge.recoverLive()
+            }
 
             Item { Layout.fillWidth: true }
 

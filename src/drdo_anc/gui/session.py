@@ -4,13 +4,17 @@ import argparse
 
 from PySide6.QtCore import QSettings
 
-from drdo_anc.enhancement import list_models
+from drdo_anc.enhancement import create_enhancer, list_models
 from drdo_anc.gui.bridge import GUIBridge
+from drdo_anc.gui.benchmark_bridge import apply_benchmark_presentation
+from drdo_anc.gui.benchmark_results import load_gui_benchmark_presentation
 from drdo_anc.gui.demo import DemoAudioController, load_benchmark_summary
 from drdo_anc.gui.demo_manifest import (
     DemoManifestError,
+    MISSING_DEMO_SCENARIO_CATEGORIES,
     compute_demo_reference_metrics,
     load_validated_demo_catalog,
+    scenario_source_display_path,
 )
 from drdo_anc.gui.devices import (
     GuiAudioDevice,
@@ -23,7 +27,12 @@ from drdo_anc.gui.devices import (
     match_preferred,
     output_devices,
     resolve_role_device,
+    validate_live_startup,
 )
+from drdo_anc.enhancement.finetuned import FINETUNED_MODEL_NAME
+from drdo_anc.gui.demo_preflight import run_demo_preflight
+from drdo_anc.gui.demo_state import DEMO_STATUS_IDLE
+from drdo_anc.gui.live_state import LIVE_STATUS_ERROR, LIVE_STATUS_IDLE, LIVE_STATUS_LIVE
 
 
 def _parse_device(value: str | None) -> int | str | None:
@@ -91,6 +100,7 @@ class ApplicationSession:
         self._bridge = bridge
         self._args = args
         self._live_controller = live_controller
+        self._live_controller.set_finished_callback(self._on_live_stream_finished)
         self._mode = "demo"
         self._settings = QSettings()
         self._all_devices: list[GuiAudioDevice] = []
@@ -120,8 +130,12 @@ class ApplicationSession:
         labels = [scenario.label for scenario in catalog.scenarios]
         self._bridge.set_scenario_labels(labels)
         self._bridge.set_selected_scenario_index(0)
+        self._bridge.set_missing_demo_categories(
+            [message for _, message in MISSING_DEMO_SCENARIO_CATEGORIES],
+        )
 
         scenario = catalog.scenarios[0]
+        self._apply_scenario_to_bridge(scenario)
         self._bridge.set_demo_assets(
             clean_file=scenario.clean_reference_path.name
             if scenario.clean_reference_path
@@ -155,6 +169,23 @@ class ApplicationSession:
         self._demo_controller.set_ab_mode("raw")
         self.refresh_devices()
         self._bridge.set_audio_status("Ready")
+        self._bridge.set_demo_status("IDLE")
+        self._bridge.set_live_status(LIVE_STATUS_IDLE)
+        self._bridge.clear_live_fallback()
+        self._publish_live_device_summaries()
+        apply_benchmark_presentation(
+            bridge,
+            load_gui_benchmark_presentation(),
+        )
+
+    def _apply_scenario_to_bridge(self, scenario) -> None:
+        self._bridge.set_demo_scenario_details(
+            label=scenario.label,
+            source_file=scenario_source_display_path(scenario),
+            sample_rate=scenario.sample_rate,
+            model_name=self._selected_model,
+            duration_s=scenario.duration_s,
+        )
 
     @property
     def selected_input_backend_index(self) -> int | None:
@@ -261,6 +292,7 @@ class ApplicationSession:
         self._apply_io_to_controllers()
         self._persist_selection()
         self._publish_device_choices()
+        self._publish_live_device_summaries()
 
         block = live_start_block_reason(
             self._selected_input,
@@ -335,6 +367,12 @@ class ApplicationSession:
             model_name=model_name,
             sample_rate=self._bridge.sampleRate or 48_000,
         )
+        if self._mode == "demo":
+            index = self._bridge.selectedScenarioIndex
+            if 0 <= index < len(self._demo_controller.catalog.scenarios):
+                self._apply_scenario_to_bridge(
+                    self._demo_controller.catalog.scenarios[index],
+                )
         self._publish_device_choices()
         self._bridge.clear_error()
 
@@ -348,6 +386,18 @@ class ApplicationSession:
         self._settings.setValue("audio/show_all_devices", self._show_all_devices)
         self.refresh_devices()
 
+    def set_benchmark_mode(self) -> None:
+        if self._mode == "benchmark":
+            return
+
+        self._demo_controller.stop()
+        self._live_controller.stop()
+        self._bridge.set_devices_locked(False)
+        self._mode = "benchmark"
+        self._bridge.set_operation_mode("benchmark")
+        self._bridge.set_audio_status("Ready")
+        self._bridge.clear_error()
+
     def set_demo_mode(self) -> None:
         if self._mode == "demo":
             return
@@ -357,16 +407,64 @@ class ApplicationSession:
         self._mode = "demo"
         self._bridge.set_operation_mode("demo")
         self._bridge.set_audio_status("Ready")
+        self._bridge.set_live_status(LIVE_STATUS_IDLE)
+
+    def _model_sample_rate(self, *, set_error: bool = True) -> int | None:
+        if self._args.passthrough:
+            return int(self._args.sample_rate or 48_000)
+        try:
+            enhancer = create_enhancer(self._selected_model, load=False)
+            return int(enhancer.sample_rate())
+        except Exception as exc:
+            if set_error:
+                self._bridge.set_error(
+                    f"Model '{self._selected_model}' is not available: {exc}",
+                )
+            return None
+
+    def _offer_model_init_fallback(self) -> None:
+        if self._selected_model == FINETUNED_MODEL_NAME:
+            self._bridge.offer_live_fallback(
+                "Fine-tuned model could not be initialized.",
+                kind="model",
+            )
+        else:
+            self._bridge.offer_live_fallback(
+                f"Model '{self._selected_model}' could not be initialized.",
+                kind="model",
+            )
 
     def set_live_mode(self) -> None:
-        block = live_start_block_reason(
+        self._bridge.clear_live_fallback()
+
+        model_sample_rate = self._model_sample_rate(set_error=False)
+        if model_sample_rate is None:
+            self._offer_model_init_fallback()
+            self._bridge.set_live_status(LIVE_STATUS_ERROR)
+            if self._mode != "live":
+                self._demo_controller.stop()
+                self._mode = "live"
+                self._bridge.set_operation_mode("live")
+            return
+
+        block, _effective_sr = validate_live_startup(
             self._selected_input,
             self._selected_output,
             available_inputs=self._input_choices,
             available_outputs=self._output_choices,
+            model_sample_rate=model_sample_rate,
+            requested_sample_rate=self._args.sample_rate,
         )
         if block is not None:
-            self._bridge.set_error(block)
+            self._bridge.offer_live_fallback(
+                "Live audio could not be started.",
+                kind="live",
+            )
+            self._bridge.set_live_status(LIVE_STATUS_IDLE)
+            if self._mode != "live":
+                self._demo_controller.stop()
+                self._mode = "live"
+                self._bridge.set_operation_mode("live")
             return
 
         if self._mode != "live":
@@ -374,16 +472,38 @@ class ApplicationSession:
             self._mode = "live"
             self._bridge.set_operation_mode("live")
 
-        if self._live_controller.is_started:
+        if self._live_controller.state == LIVE_STATUS_LIVE:
             return
 
+        self._publish_live_device_summaries()
         self._apply_io_to_controllers()
+        self._bridge.set_live_input_overflows(0)
+        self._bridge.clear_error()
         self._live_controller.start()
-        if self._live_controller.is_started:
+        if self._live_controller.state == LIVE_STATUS_LIVE:
             self._bridge.set_devices_locked(True)
-            self._bridge.set_audio_status("Live")
+        elif self._live_controller.state == LIVE_STATUS_ERROR:
+            self._bridge.offer_live_fallback(
+                "Live audio could not be started.",
+                kind="live",
+            )
+
+    def stop_live(self) -> None:
+        if self._mode != "live":
+            return
+        self._live_controller.stop()
+        self._bridge.set_devices_locked(False)
+
+    def recover_live(self) -> None:
+        self._live_controller.recover()
+        self._bridge.set_devices_locked(False)
+        self._bridge.set_live_input_overflows(0)
+        self._bridge.clear_live_fallback()
+        self._bridge.clear_error()
 
     def play(self) -> None:
+        if self._mode == "benchmark":
+            return
         if self._mode == "demo":
             self._demo_controller.play()
         else:
@@ -394,12 +514,13 @@ class ApplicationSession:
             self._demo_controller.pause()
 
     def stop(self) -> None:
+        if self._mode == "benchmark":
+            return
         if self._mode == "demo":
             self._demo_controller.stop()
             return
 
-        self._live_controller.stop()
-        self._bridge.set_devices_locked(False)
+        self.stop_live()
         self._bridge.set_audio_status("Stopped")
 
     def set_scenario(self, index: int) -> None:
@@ -408,9 +529,95 @@ class ApplicationSession:
 
         try:
             self._demo_controller.set_scenario_index(index)
+            scenario = self._demo_controller.catalog.scenarios[index]
+            self._apply_scenario_to_bridge(scenario)
+            self._bridge.set_demo_assets(
+                clean_file=scenario.clean_reference_path.name
+                if scenario.clean_reference_path
+                else "",
+                noisy_file=scenario.wav_path.name,
+                enhanced_ref_file=scenario.enhanced_wav_path.name
+                if scenario.enhanced_wav_path
+                else "",
+                enhanced_playback=(
+                    "Live DF3"
+                    if scenario.enhanced_playback == "live"
+                    else "Offline Reference"
+                ),
+            )
+            if (
+                scenario.clean_reference_path is not None
+                and scenario.enhanced_wav_path is not None
+            ):
+                metrics = compute_demo_reference_metrics(scenario)
+                self._bridge.set_demo_reference_metrics(metrics)
+            else:
+                self._bridge.clear_demo_reference_metrics()
         except DemoManifestError as exc:
-            self._bridge.set_error(f"Demo scenario unavailable: {exc}")
+            self._bridge.set_error("Demo audio unavailable for this scenario.")
             self._bridge.set_audio_status("Error")
+            self._bridge.set_demo_status("ERROR")
+            _ = exc
+
+    def reset_demo(self) -> None:
+        if self._mode != "demo":
+            self.set_demo_mode()
+        self._demo_controller.reset()
+
+    def emergency_reset_demo(self) -> None:
+        """Stop all audio paths and return to a safe recorded-demo idle state."""
+
+        self._live_controller.stop()
+        self._live_controller.recover()
+        self._demo_controller.stop()
+        self._demo_controller.reset()
+        self._demo_controller.set_ab_mode("raw")
+        self._bridge.set_devices_locked(False)
+        self._bridge.set_live_input_overflows(0)
+        self._bridge.clear_live_fallback()
+        self._bridge.clear_error()
+        self._bridge.set_live_status(LIVE_STATUS_IDLE)
+        self._bridge.set_demo_status(DEMO_STATUS_IDLE)
+        self._bridge.set_playback_state("stopped")
+        self._bridge.set_audio_status("Ready")
+        self._bridge.set_pipeline_stage("input")
+        self._mode = "demo"
+        self._bridge.set_operation_mode("demo")
+
+    def run_demo_preflight(self) -> None:
+        self._bridge.set_preflight_checking()
+        report = run_demo_preflight(
+            selected_input=self._selected_input,
+            selected_output=self._selected_output,
+            available_inputs=self._input_choices,
+            available_outputs=self._output_choices,
+            model_name=FINETUNED_MODEL_NAME,
+            requested_sample_rate=self._args.sample_rate,
+            chunk_size=int(self._args.chunk_size),
+        )
+        self._bridge.set_preflight_report(
+            status=report.status,
+            summary=report.summary,
+            check_lines=report.check_lines,
+        )
+
+    def try_live_again(self) -> None:
+        self._bridge.clear_live_fallback()
+        self._bridge.clear_error()
+        self._live_controller.recover()
+        if self._mode != "live":
+            self._mode = "live"
+            self._bridge.set_operation_mode("live")
+        self.set_live_mode()
+
+    def use_recorded_demo(self) -> None:
+        self._live_controller.stop()
+        self._live_controller.recover()
+        self._bridge.set_devices_locked(False)
+        self._bridge.clear_live_fallback()
+        self._bridge.clear_error()
+        self._bridge.set_live_status(LIVE_STATUS_IDLE)
+        self.set_demo_mode()
 
     def set_ab_raw(self) -> None:
         self._demo_controller.set_ab_mode("raw")
@@ -448,6 +655,31 @@ class ApplicationSession:
                 "audio/output_hostapi",
                 self._selected_output.hostapi_name,
             )
+
+    def _on_live_stream_finished(self) -> None:
+        self._bridge.set_devices_locked(False)
+        if self._live_controller.state == LIVE_STATUS_ERROR:
+            if not self._bridge._live_fallback_offered:
+                self._bridge.offer_live_fallback(
+                    "Live audio could not be started.",
+                    kind="live",
+                )
+
+    def _publish_live_device_summaries(self) -> None:
+        input_text = (
+            self._selected_input.summary_text("input")
+            if self._selected_input is not None
+            else ""
+        )
+        output_text = (
+            self._selected_output.summary_text("output")
+            if self._selected_output is not None
+            else ""
+        )
+        self._bridge.set_live_device_summaries(
+            input_summary=input_text,
+            output_summary=output_text,
+        )
 
     def _publish_device_choices(self) -> None:
         block = live_start_block_reason(

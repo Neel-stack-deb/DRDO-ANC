@@ -14,6 +14,7 @@ Window {
     Shortcut { sequence: "A"; onActivated: guiBridge.selectAbRaw() }
     Shortcut { sequence: "B"; onActivated: guiBridge.selectAbEnhanced() }
     Shortcut { sequence: "1"; onActivated: guiBridge.selectScenario(0) }
+    Shortcut { sequence: "2"; onActivated: guiBridge.selectScenario(1) }
 
     // Deep Premium Dark Palette
     property color black: "#05070A"
@@ -49,9 +50,18 @@ Window {
             }
             
             Text {
-                text: guiBridge.isLive ? "ACTIVE" : (guiBridge.operationMode === "demo" ? "DEMO" : "OFFLINE")
+                text: guiBridge.demoSourceLabel
                 color: cyan
                 font.pixelSize: 48
+                font.bold: true
+                Layout.alignment: Qt.AlignLeft
+            }
+
+            Text {
+                visible: guiBridge.operationMode === "live"
+                text: "· " + guiBridge.liveStatus
+                color: lightGrey
+                font.pixelSize: 28
                 font.bold: true
                 Layout.alignment: Qt.AlignLeft
             }
@@ -81,17 +91,35 @@ Window {
 
         DemoControls {
             Layout.fillWidth: true
-            Layout.preferredHeight: 230
+            Layout.preferredHeight: 320
+        }
+
+        BenchmarkPanel {
+            Layout.fillWidth: true
+            Layout.preferredHeight: guiBridge.isBenchmarkMode ? 340 : 0
+            visible: guiBridge.isBenchmarkMode
         }
 
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 16
+            visible: !guiBridge.isBenchmarkMode
 
-            DemoPanel {
+            Item {
                 Layout.preferredWidth: 260
                 Layout.fillHeight: true
+                visible: !guiBridge.isBenchmarkMode
+
+                DemoPanel {
+                    anchors.fill: parent
+                    visible: guiBridge.operationMode === "demo"
+                }
+
+                LivePanel {
+                    anchors.fill: parent
+                    visible: guiBridge.operationMode === "live"
+                }
             }
 
             ColumnLayout {

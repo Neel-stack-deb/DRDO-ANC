@@ -31,6 +31,8 @@ class DemoScenario:
     enhanced_playback: str = "live"
     noise_type: str | None = None
     target_snr_db: float | None = None
+    sample_rate: int = 48_000
+    duration_s: float = 0.0
 
 
 def project_root() -> Path:
@@ -233,7 +235,33 @@ def _validate_scenario_entry(
             if entry.get("target_snr_db") is not None
             else None
         ),
+        sample_rate=input_asset.sample_rate,
+        duration_s=input_asset.duration_s,
     )
+
+
+def scenario_source_display_path(scenario: DemoScenario) -> str:
+    """Project-relative path string for GUI display."""
+
+    root = project_root()
+    try:
+        return scenario.wav_path.relative_to(root).as_posix()
+    except ValueError:
+        return scenario.wav_path.name
+
+
+# SIH demo categories that require dedicated local WAV assets (not in zip-only corpus).
+MISSING_DEMO_SCENARIO_CATEGORIES: tuple[tuple[str, str], ...] = (
+    ("uav_drone", "Drone — no validated mono WAV in data/ (corpus is zip-only)"),
+    (
+        "vehicle_engine",
+        "Vehicle/Engine — no validated mono WAV in data/ (corpus is zip-only)",
+    ),
+    (
+        "impulsive_firearms",
+        "Impulsive noise — no validated mono WAV in data/ (corpus is zip-only)",
+    ),
+)
 
 
 def compute_demo_reference_metrics(
