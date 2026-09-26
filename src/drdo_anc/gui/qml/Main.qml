@@ -83,6 +83,7 @@ Window {
         Text {
             Layout.fillWidth: true
             visible: guiBridge.errorMessage.length > 0
+                    && !guiBridge.liveFallbackOffered
             text: "ERROR: " + guiBridge.errorMessage
             color: "#FF5577"
             font.pixelSize: 12
@@ -91,7 +92,7 @@ Window {
 
         DemoControls {
             Layout.fillWidth: true
-            Layout.preferredHeight: 320
+            Layout.preferredHeight: 240
         }
 
         BenchmarkPanel {
@@ -107,7 +108,7 @@ Window {
             visible: !guiBridge.isBenchmarkMode
 
             Item {
-                Layout.preferredWidth: 260
+                Layout.preferredWidth: 180
                 Layout.fillHeight: true
                 visible: !guiBridge.isBenchmarkMode
 

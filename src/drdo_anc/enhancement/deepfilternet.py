@@ -354,9 +354,7 @@ class DeepFilterNetEnhancer(Enhancer):
         """Return the sample rate expected by DeepFilterNet."""
 
         if self._sample_rate is None:
-            raise RuntimeError(
-                "Enhancer is not loaded. Call load() first."
-            )
+            return 48_000
 
         return self._sample_rate
 

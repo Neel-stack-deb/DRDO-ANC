@@ -40,7 +40,7 @@ class GUIBridge(QObject):
   devicesChanged = Signal()
   preflightStateChanged = Signal()
 
-  def __init__(self, fps: int = 60) -> None:
+  def __init__(self, fps: int = 30) -> None:
     super().__init__()
     self._fps = fps
     self._timer = QTimer(self)
@@ -616,8 +616,8 @@ class GUIBridge(QObject):
     self._demo_noisy_file = noisy_file
     self._demo_enhanced_ref_file = enhanced_ref_file
     self._demo_enhanced_playback = enhanced_playback
-    self._demo_input_label = f"NOISY INPUT ({noisy_file})"
-    self._demo_output_label = f"{enhanced_playback} OUTPUT"
+    self._demo_input_label = "NOISY INPUT"
+    self._demo_output_label = "ENHANCED OUTPUT"
     self.demoStateChanged.emit()
 
   def set_demo_status(self, status: str) -> None:
@@ -799,7 +799,7 @@ class GUIBridge(QObject):
   @Slot()
   def setLiveMode(self) -> None:
     if self._session is not None:
-      self._session.set_live_mode()
+      self._session.select_live_mode()
 
   @Slot()
   def setBenchmarkMode(self) -> None:

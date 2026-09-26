@@ -38,7 +38,6 @@ Item {
             }
 
             Item { Layout.fillWidth: true }
-            Text { text: guiBridge.demoScenario; color: cyan; font.pixelSize: 10 }
         }
 
         RowLayout {
@@ -152,26 +151,16 @@ Item {
             }
         }
 
-        ColumnLayout {
+        Text {
             Layout.fillWidth: true
-            spacing: 2
-            visible: guiBridge.preflightHasRun
-
-            Text {
-                text: "DEMO PREFLIGHT"
-                color: dim
-                font.pixelSize: 10
-                font.bold: true
-            }
-            Repeater {
-                model: guiBridge.preflightCheckLines
-                delegate: Text {
-                    text: modelData
-                    color: modelData.startsWith("✓") ? "#88CCAA" : "#FF5577"
-                    font.pixelSize: 10
-                    font.family: "Consolas"
-                }
-            }
+            visible: guiBridge.preflightHasRun && guiBridge.preflightStatus === "FAILED"
+            text: guiBridge.preflightCheckLines.join("\n")
+            color: "#FF5577"
+            font.pixelSize: 9
+            font.family: "Consolas"
+            wrapMode: Text.WordWrap
+            maximumLineCount: 4
+            elide: Text.ElideNone
         }
 
         RowLayout {

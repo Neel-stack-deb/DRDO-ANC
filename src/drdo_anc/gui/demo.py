@@ -64,7 +64,21 @@ def _default_open_output(
         sample_rate,
         output_device=output_device,
         blocksize=blocksize,
+        latency="low",
     )
+
+
+def _friendly_output_error(exc: BaseException) -> str:
+    text = str(exc).strip()
+    if "Insufficient memory" in text or "-9992" in text:
+        return (
+            "Headphone output is busy or unavailable. "
+            "Click RESET DEMO, stop Live mode, close other apps using the device, "
+            "then try Play again."
+        )
+    if "Error opening" in text or "Invalid device" in text:
+        return "Selected output device is unavailable. Refresh devices and try again."
+    return f"Demo startup failed: {text}"
 
 # Deterministic impulse positions used only by unit tests.
 _IMPULSE_OFFSETS = (
@@ -446,6 +460,31 @@ class DemoAudioController:
             return
         self._set_demo_status(playing_status_for_ab_mode(self._ab_mode))
 
+    def _close_playback_resources(self) -> None:
+        """Release PortAudio playback streams (safe if partially constructed)."""
+
+        if self._selectable_output is not None:
+            try:
+                self._selectable_output.close()
+            except Exception:
+                traceback.print_exc()
+
+        if self._sink is not None:
+            try:
+                self._sink.close()
+            except Exception:
+                traceback.print_exc()
+        elif self._hardware_sink is not None:
+            try:
+                self._hardware_sink.close()
+            except Exception:
+                traceback.print_exc()
+
+        self._playback_queue = None
+        self._hardware_sink = None
+        self._sink = None
+        self._selectable_output = None
+
     def _safe_teardown(self, *, join_thread: bool = True) -> None:
         if self._pipeline is not None:
             try:
@@ -467,11 +506,7 @@ class DemoAudioController:
         ):
             self._thread.join(timeout=5.0)
 
-        if self._sink is not None:
-            try:
-                self._sink.close()
-            except Exception:
-                traceback.print_exc()
+        self._close_playback_resources()
 
         if self._enhancer is not None:
             try:
@@ -481,10 +516,6 @@ class DemoAudioController:
 
         self._pipeline = None
         self._replay_input = None
-        self._selectable_output = None
-        self._playback_queue = None
-        self._hardware_sink = None
-        self._sink = None
         self._reference_enhanced_audio = None
         self._clean_reference_audio = None
         self._thread = None
@@ -503,6 +534,8 @@ class DemoAudioController:
         return self._enhancer
 
     def _build_pipeline(self) -> None:
+        self._close_playback_resources()
+
         enhancer = self._ensure_enhancer()
         scenario = self._current_scenario()
         audio, sample_rate = self._load_current_audio()
@@ -518,24 +551,6 @@ class DemoAudioController:
             sample_rate,
             realtime=not self._physical_output,
         )
-
-        if self._physical_output:
-            self._hardware_sink = self._open_output(
-                sample_rate,
-                output_device=self._output_device,
-                blocksize=self._chunk_size,
-            )
-            self._playback_queue = ABQueuedPlaybackOutput(
-                self._hardware_sink,
-                sample_rate=sample_rate,
-                chunk_samples=self._chunk_size,
-                max_chunks=DEFAULT_PLAYBACK_QUEUE_CHUNKS,
-            )
-            self._sink = self._playback_queue
-        else:
-            self._hardware_sink = None
-            self._playback_queue = None
-            self._sink = FakeAudioOutput(sample_rate)
 
         reference_audio = None
         reference_for_playback = scenario.enhanced_playback == "reference"
@@ -569,6 +584,29 @@ class DemoAudioController:
             self._clean_reference_audio = None
 
         self._reference_enhanced_audio = reference_audio
+
+        if self._physical_output:
+            try:
+                self._hardware_sink = self._open_output(
+                    sample_rate,
+                    output_device=self._output_device,
+                    blocksize=self._chunk_size,
+                )
+                self._playback_queue = ABQueuedPlaybackOutput(
+                    self._hardware_sink,
+                    sample_rate=sample_rate,
+                    chunk_samples=self._chunk_size,
+                    max_chunks=DEFAULT_PLAYBACK_QUEUE_CHUNKS,
+                )
+                self._sink = self._playback_queue
+            except Exception:
+                self._close_playback_resources()
+                raise
+        else:
+            self._hardware_sink = None
+            self._playback_queue = None
+            self._sink = FakeAudioOutput(sample_rate)
+
         self._selectable_output = DemoPipelineOutput(
             self._sink,
             self._replay_input,
@@ -665,7 +703,7 @@ class DemoAudioController:
                 return
             except Exception as exc:
                 self._safe_teardown()
-                self._bridge.set_error(f"Demo startup failed: {exc}")
+                self._bridge.set_error(_friendly_output_error(exc))
                 self._bridge.set_audio_status("Error")
                 self._set_demo_status(DEMO_STATUS_ERROR)
                 traceback.print_exc()

@@ -404,6 +404,8 @@ class ApplicationSession:
 
         self._live_controller.stop()
         self._bridge.set_devices_locked(False)
+        self._bridge.clear_live_fallback()
+        self._bridge.clear_error()
         self._mode = "demo"
         self._bridge.set_operation_mode("demo")
         self._bridge.set_audio_status("Ready")
@@ -434,17 +436,32 @@ class ApplicationSession:
                 kind="model",
             )
 
+    def select_live_mode(self) -> None:
+        """Switch to Live UI without opening the microphone (use Play to start)."""
+
+        if self._mode == "live":
+            return
+
+        self._bridge.clear_live_fallback()
+        self._bridge.clear_error()
+        self._demo_controller.stop()
+        self._mode = "live"
+        self._bridge.set_operation_mode("live")
+        self._bridge.set_live_status(LIVE_STATUS_IDLE)
+        self._publish_live_device_summaries()
+
     def set_live_mode(self) -> None:
+        """Validate devices/model and start live capture (Play in Live mode)."""
+
+        if self._mode != "live":
+            self.select_live_mode()
+
         self._bridge.clear_live_fallback()
 
         model_sample_rate = self._model_sample_rate(set_error=False)
         if model_sample_rate is None:
             self._offer_model_init_fallback()
             self._bridge.set_live_status(LIVE_STATUS_ERROR)
-            if self._mode != "live":
-                self._demo_controller.stop()
-                self._mode = "live"
-                self._bridge.set_operation_mode("live")
             return
 
         block, _effective_sr = validate_live_startup(
@@ -461,16 +478,7 @@ class ApplicationSession:
                 kind="live",
             )
             self._bridge.set_live_status(LIVE_STATUS_IDLE)
-            if self._mode != "live":
-                self._demo_controller.stop()
-                self._mode = "live"
-                self._bridge.set_operation_mode("live")
             return
-
-        if self._mode != "live":
-            self._demo_controller.stop()
-            self._mode = "live"
-            self._bridge.set_operation_mode("live")
 
         if self._live_controller.state == LIVE_STATUS_LIVE:
             return
@@ -505,6 +513,8 @@ class ApplicationSession:
         if self._mode == "benchmark":
             return
         if self._mode == "demo":
+            self._live_controller.stop()
+            self._bridge.set_devices_locked(False)
             self._demo_controller.play()
         else:
             self.set_live_mode()
