@@ -102,64 +102,31 @@ Rectangle {
             spacing: 24
 
             Column {
-                spacing: 6
-                width: 100
-                Item {
-                    width: 100
-                    height: Math.max(16, 72 * pretrainedSiSdr / Math.max(pretrainedSiSdr, finetunedSiSdr, 1))
+                width: Math.min(420, Math.max(240, parent.width - 220))
+                spacing: 8
+                Row {
+                    width: parent.width
+                    spacing: 10
+                    Text { width: 92; text: "Pretrained"; color: dim; font.pixelSize: 13 }
                     Rectangle {
-                        width: 44
-                        height: parent.height
-                        x: (parent.width - width) / 2
-                        radius: 6
+                        width: Math.max(4, (parent.width - 150) * pretrainedSiSdr / Math.max(pretrainedSiSdr, finetunedSiSdr, 1))
+                        height: 16
+                        radius: 4
                         color: "#4A5A6A"
                     }
+                    Text { text: pretrainedSiSdr.toFixed(2) + " dB"; color: white; font.pixelSize: 14; font.bold: true }
                 }
-                Text {
-                    width: 100
-                    text: "Pretrained"
-                    color: dim
-                    font.pixelSize: 13
-                    horizontalAlignment: Text.AlignHCenter
-                }
-                Text {
-                    width: 100
-                    text: pretrainedSiSdr.toFixed(2) + " dB"
-                    color: white
-                    font.pixelSize: 15
-                    font.bold: true
-                    horizontalAlignment: Text.AlignHCenter
-                }
-            }
-
-            Column {
-                spacing: 6
-                width: 100
-                Item {
-                    width: 100
-                    height: Math.max(16, 72 * finetunedSiSdr / Math.max(pretrainedSiSdr, finetunedSiSdr, 1))
+                Row {
+                    width: parent.width
+                    spacing: 10
+                    Text { width: 92; text: "Fine-tuned"; color: dim; font.pixelSize: 13 }
                     Rectangle {
-                        width: 44
-                        height: parent.height
-                        x: (parent.width - width) / 2
-                        radius: 6
+                        width: Math.max(4, (parent.width - 150) * finetunedSiSdr / Math.max(pretrainedSiSdr, finetunedSiSdr, 1))
+                        height: 16
+                        radius: 4
                         color: cyan
                     }
-                }
-                Text {
-                    width: 100
-                    text: "Fine-tuned"
-                    color: dim
-                    font.pixelSize: 13
-                    horizontalAlignment: Text.AlignHCenter
-                }
-                Text {
-                    width: 100
-                    text: finetunedSiSdr.toFixed(2) + " dB"
-                    color: cyan
-                    font.pixelSize: 15
-                    font.bold: true
-                    horizontalAlignment: Text.AlignHCenter
+                    Text { text: finetunedSiSdr.toFixed(2) + " dB"; color: cyan; font.pixelSize: 14; font.bold: true }
                 }
             }
 

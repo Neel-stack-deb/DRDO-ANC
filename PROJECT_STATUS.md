@@ -935,6 +935,21 @@ Telemetry is scoped by `GUIBridge` operation mode and an incrementing session to
 
 **Validation (2026-09-27):** `python scripts/test_gui_telemetry.py` — **9/9 passed**; `python -m compileall -q src/drdo_anc/gui scripts/test_gui_telemetry.py tests/test_gui_telemetry_ownership.py` — passed. The active system Python does not have `pytest` installed, so the pytest wrapper/full pytest suite could not be run in this environment.
 
+### Benchmark screen presentation corrections (2026-09-27)
+
+Benchmark presentation remains read-only and continues to load the authoritative reports through `benchmark_results.py` and `benchmark_bridge.py`. No GUI benchmark execution, inference, methodology, or result artifact was changed.
+
+| Area | Correction |
+|------|------------|
+| Evaluation identity | Development shows `sih26-eval-v1`; recording-disjoint shows `sih26-finetuned-recording-safe-v1`. Development metadata is no longer reused under recording-disjoint. |
+| Hold-out wording | Recording-disjoint displays **Training hold-out status: UNVERIFIED** with a secondary warning that it must not be presented as a verified training hold-out result. |
+| Hierarchy | Each card presents evaluation type/context, the pretrained vs fine-tuned table, SI-SDR improvement, paired-case result, and supporting metrics. |
+| SI-SDR chart | Replaced the tall vertical chart with compact horizontal bars; exact values remain visible and the table remains authoritative. |
+| Formatting | SI-SDR/SNR use 2 decimals plus dB; STOI/PESQ use 3 decimals. |
+| Separation | Development, recording-disjoint, demo telemetry, and live telemetry remain separate data paths. |
+
+**Validation (2026-09-27):** `python scripts/test_gui_benchmark.py` — **9/9 passed**; `python scripts/test_gui_mode_ui.py` — **6/6 passed**; no benchmark execution is performed by GUI startup or these tests.
+
 #### Remaining limitations (Demo Mode v2)
 
 | Limitation | Detail |

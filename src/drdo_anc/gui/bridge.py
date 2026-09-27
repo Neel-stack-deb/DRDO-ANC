@@ -684,6 +684,10 @@ class GUIBridge(QObject):
   def rdRulesVersion(self) -> str:
     return str(self._rd_benchmark.get("rules_version", ""))
 
+  @Property(str, notify=benchmarkStateChanged)
+  def rdEvaluationModes(self) -> str:
+    return str(self._rd_benchmark.get("evaluation_modes", ""))
+
   @Property(int, notify=benchmarkStateChanged)
   def rdPairedEvaluations(self) -> int:
     return int(self._rd_benchmark.get("paired_evaluations", 0))

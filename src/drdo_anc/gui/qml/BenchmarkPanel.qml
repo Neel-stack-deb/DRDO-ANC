@@ -49,7 +49,8 @@ ScrollView {
                     wrapMode: Text.WordWrap
                     color: dim
                     font.pixelSize: 15
-                    text: "SIH-26 evaluation protocol · pretrained vs fine-tuned · not live microphone data"
+                      text: "Offline evaluation — pretrained vs fine-tuned model. " +
+                          "These results are not live microphone measurements."
                 }
             }
         }
@@ -142,10 +143,7 @@ ScrollView {
                     wrapMode: Text.WordWrap
                     color: dim
                     font.pixelSize: 14
-                    text: "Development · " + guiBridge.devRulesVersion +
-                          " · " + guiBridge.devEvaluationModes +
-                          " · " + guiBridge.benchmarkPretrainedModel +
-                          " vs " + guiBridge.benchmarkFinetunedModel
+                    text: guiBridge.devBenchmarkContext
                 }
                 Text {
                     visible: guiBridge.rdBenchmarkAvailable
@@ -153,7 +151,10 @@ ScrollView {
                     wrapMode: Text.WordWrap
                     color: dim
                     font.pixelSize: 14
-                    text: "Recording-disjoint · " + guiBridge.rdRulesVersion
+                      text: guiBridge.rdBenchmarkTitle + " · " + guiBridge.rdRulesVersion +
+                          " · " + guiBridge.rdEvaluationModes + " · " +
+                          guiBridge.benchmarkPretrainedModel + " vs " +
+                          guiBridge.benchmarkFinetunedModel
                 }
                 Text {
                     text: metricsHelpOpen ? "Hide metric guide" : "What do these metrics mean?"

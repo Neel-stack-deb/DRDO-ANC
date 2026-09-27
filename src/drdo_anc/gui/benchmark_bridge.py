@@ -11,15 +11,10 @@ from drdo_anc.gui.benchmark_results import (
     GuiBenchmarkPresentation,
 )
 
-DEVELOPMENT_CONTEXT_LINES = (
-    "Development Benchmark",
-    "",
-    "• 60 cases",
-    "• 10 clean speakers",
-    "• 3 noise categories",
-    "• 2 SNR conditions",
-    "• deterministic evaluation",
-    "• offline + streaming evaluation",
+DEVELOPMENT_CONTEXT = (
+    "Development · sih26-eval-v1 · 60 deterministic cases · "
+    "10 clean speakers · 3 noise categories · 2 SNR conditions · "
+    "offline + streaming · pretrained vs fine-tuned"
 )
 
 
@@ -55,15 +50,17 @@ def _format_block(block: BenchmarkComparisonBlock | None) -> dict[str, str | flo
     holdout_note = ""
     if block.training_holdout_status:
         holdout_note = (
-            "training_holdout_status = unverified — "
-            "not a verified training hold-out result."
+            "Training hold-out status: UNVERIFIED\n"
+            "This evaluation should not be presented as a verified "
+            "training hold-out result."
         )
 
-    context = "\n".join(DEVELOPMENT_CONTEXT_LINES)
+    context = DEVELOPMENT_CONTEXT
     if block.section_id != "development":
         context = (
-            f"{block.section_title}\n\n"
-            "Recording-disjoint evaluation (independent protocol).\n"
+            "Recording-disjoint evaluation · "
+            f"{block.rules_version} · offline + streaming · "
+            "pretrained vs fine-tuned\n"
             f"{holdout_note}"
         )
 

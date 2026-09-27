@@ -149,6 +149,77 @@ def test_bridge_apply_sets_loaded_flag() -> None:
         assert bridge.payload["development"]["available"] is True
 
 
+def test_bridge_keeps_evaluation_identity_and_holdout_copy() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        for directory, rules, values in (
+            (
+                "dfn3_finetuned_compare",
+                "sih26-eval-v1",
+                (12.71, 14.95),
+            ),
+            (
+                "dfn3_finetuned_recording_safe",
+                "sih26-finetuned-recording-safe-v1",
+                (12.29, 15.47),
+            ),
+        ):
+            result_dir = root / directory
+            result_dir.mkdir(parents=True)
+            for model, si_sdr in zip(("pretrained", "finetuned"), values):
+                (result_dir / f"{model}_full.json").write_text(
+                    json.dumps(
+                        _minimal_report(
+                            rules=rules,
+                            si_sdr=si_sdr,
+                            stoi=0.7,
+                            pesq=2.0,
+                            snr=12.0,
+                        )
+                    ),
+                    encoding="utf-8",
+                )
+
+        bridge = _Bridge()
+        apply_benchmark_presentation(bridge, load_gui_benchmark_presentation(root))
+        development = bridge.payload["development"]
+        recording_disjoint = bridge.payload["recording_disjoint"]
+        assert "sih26-eval-v1" in development["context"]
+        assert "sih26-finetuned-recording-safe-v1" in recording_disjoint["context"]
+        assert "sih26-eval-v1" not in recording_disjoint["context"]
+        assert "Training hold-out status: UNVERIFIED" in recording_disjoint["holdout_note"]
+        assert "should not be presented as a verified training hold-out result" in recording_disjoint["holdout_note"]
+
+
+def test_benchmark_values_use_display_precision() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        result_dir = root / "dfn3_finetuned_compare"
+        result_dir.mkdir(parents=True)
+        for model, si_sdr in (("pretrained", 12.71), ("finetuned", 14.95)):
+            (result_dir / f"{model}_full.json").write_text(
+                json.dumps(
+                    _minimal_report(
+                        rules="sih26-eval-v1",
+                        si_sdr=si_sdr,
+                        stoi=0.667,
+                        pesq=1.850,
+                        snr=12.30,
+                    )
+                ),
+                encoding="utf-8",
+            )
+
+        bridge = _Bridge()
+        apply_benchmark_presentation(bridge, load_gui_benchmark_presentation(root))
+        block = bridge.payload["development"]
+        assert f'{block["pretrained_si_sdr"]:.2f} dB' == "12.71 dB"
+        assert f'{block["finetuned_si_sdr"]:.2f} dB' == "14.95 dB"
+        assert f'{block["pretrained_stoi"]:.3f}' == "0.667"
+        assert f'{block["pretrained_pesq"]:.3f}' == "1.850"
+        assert f'{block["pretrained_snr"]:.2f} dB' == "12.30 dB"
+
+
 def test_local_authoritative_artifacts_match_documentation() -> None:
     root = project_root() / "data" / "benchmark_results"
     pretrained = root / "dfn3_finetuned_compare" / "pretrained_full.json"
@@ -184,6 +255,8 @@ def main() -> int:
         test_missing_results_directory,
         test_malformed_json,
         test_bridge_apply_sets_loaded_flag,
+        test_bridge_keeps_evaluation_identity_and_holdout_copy,
+        test_benchmark_values_use_display_precision,
         test_local_authoritative_artifacts_match_documentation,
         test_live_mode_unaffected_by_benchmark_loader,
     ]
