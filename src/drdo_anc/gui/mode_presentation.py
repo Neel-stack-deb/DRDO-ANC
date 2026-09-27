@@ -142,6 +142,7 @@ def activity_caption(
     duration_s: float,
     live_status: str,
     overflows: int,
+    overflows_measured: bool = False,
 ) -> str:
     if mode == DEMO_MODE:
         listening = "B Enhanced" if ab_mode == "enhanced" else "A Raw"
@@ -150,5 +151,6 @@ def activity_caption(
             f"   ·   {duration_s:.1f} s"
         )
     if mode == LIVE_MODE:
-        return f"LIVE   ·   {live_status}   ·   overflows {overflows}"
+        overflow_text = str(overflows) if overflows_measured else "—"
+        return f"LIVE   ·   {live_status}   ·   overflows {overflow_text}"
     return ""

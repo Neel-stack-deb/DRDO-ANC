@@ -77,11 +77,26 @@ Window {
             
             // System properties small text
             ColumnLayout {
-                spacing: 2
+                spacing: 1
                 Layout.alignment: Qt.AlignRight
-                Text { text: "MODEL: " + guiBridge.modelName; color: lightGrey; font.pixelSize: 10 }
-                Text { text: "SAMPLE RATE: " + guiBridge.sampleRate; color: lightGrey; font.pixelSize: 10 }
-                Text { text: "GUI FPS: 30"; color: lightGrey; font.pixelSize: 10 }
+                Text {
+                    objectName: "systemModel"
+                    text: "MODEL  " + guiBridge.modelName
+                    color: "#9AA6B8"
+                    font.pixelSize: 11
+                }
+                Text {
+                    objectName: "systemSampleRate"
+                    text: "SAMPLE RATE  " + guiBridge.sampleRate
+                    color: "#9AA6B8"
+                    font.pixelSize: 11
+                }
+                Text {
+                    objectName: "systemGuiFps"
+                    text: "GUI FPS  " + guiBridge.guiFps
+                    color: "#9AA6B8"
+                    font.pixelSize: 11
+                }
             }
         }
         

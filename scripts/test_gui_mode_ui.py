@@ -173,7 +173,7 @@ def test_activity_caption_does_not_leak_across_modes() -> None:
         live_status=LIVE_STATUS_IDLE,
         overflows=0,
     )
-    assert live == "LIVE   ·   IDLE   ·   overflows 0"
+    assert live == "LIVE   ·   IDLE   ·   overflows —"
     assert "Mixed Speech" not in live
     assert "3.0 s" not in live
     assert activity_caption(
@@ -246,7 +246,7 @@ def test_qml_modes_do_not_leave_stale_controls() -> None:
     assert ui.item("modeDescription").property("text") == LIVE_DESCRIPTION
     assert "RECORDED DEMO" not in ui.item("modeBanner").property("text")
     live_caption = ui.item("activityCaption").property("text")
-    assert live_caption == "LIVE   ·   IDLE   ·   overflows 0"
+    assert live_caption == "LIVE   ·   IDLE   ·   overflows —"
     assert "Mixed Speech" not in live_caption
     _assert_qml_matches_policy(ui)
     assert ui.effectively_visible("startLiveButton")

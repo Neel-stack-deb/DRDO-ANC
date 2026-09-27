@@ -11,6 +11,7 @@ from typing import Protocol
 
 from drdo_anc.audio.live import StreamingPipeline, close_sounddevice_io
 from drdo_anc.audio.live.interfaces import AudioInput, AudioOutput
+from drdo_anc.gui.telemetry import HOLD_LIVE
 from drdo_anc.gui.live_state import (
     LIVE_STATUS_ERROR,
     LIVE_STATUS_IDLE,
@@ -118,6 +119,11 @@ class LiveAudioController:
                 return
             self._model_name = model_name
 
+    def _end_telemetry_session(self) -> None:
+        end = getattr(self._bridge, "end_telemetry_session", None)
+        if end is not None:
+            end(HOLD_LIVE)
+
     def _set_live_status(self, status: str) -> None:
         self._state = status
         setter = getattr(self._bridge, "set_live_status", None)
@@ -167,10 +173,14 @@ class LiveAudioController:
 
             self._set_live_status(LIVE_STATUS_STARTING)
             self._bridge.clear_error()
+            begin = getattr(self._bridge, "begin_telemetry_session", None)
+            if begin is not None:
+                begin()
 
             try:
                 self._start_audio()
             except Exception as exc:
+                self._end_telemetry_session()
                 self._release_resources(join_thread=True)
                 message = self._user_message(exc)
                 self._bridge.set_error(message)
@@ -195,6 +205,7 @@ class LiveAudioController:
 
             self._set_live_status(LIVE_STATUS_IDLE)
             self._bridge.set_pipeline_stage("input")
+            self._end_telemetry_session()
             if previous != LIVE_STATUS_ERROR:
                 self._bridge.clear_error()
 
@@ -206,6 +217,9 @@ class LiveAudioController:
             self._bridge.clear_error()
             self._set_live_status(LIVE_STATUS_IDLE)
             self._bridge.set_pipeline_stage("input")
+            clear = getattr(self._bridge, "clear_mode_telemetry", None)
+            if clear is not None:
+                clear()
 
     @staticmethod
     def _user_message(exc: BaseException) -> str:

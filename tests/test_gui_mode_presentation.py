@@ -89,3 +89,4 @@ def test_live_caption_omits_recorded_demo_fields() -> None:
     )
     assert "Mixed Speech" not in live
     assert "3.0 s" not in live
+    assert "overflows —" in live

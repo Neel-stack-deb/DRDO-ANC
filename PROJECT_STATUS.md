@@ -919,6 +919,22 @@ Presentation-only correction. `StreamingPipeline`, model inference, benchmark me
 
 **Tests (2026-09-27):** `python -m pytest -q tests scripts/test_gui_mode_ui.py` — **12 passed**. `scripts/test_*.py` — **33/33 exit 0**. Offscreen `Main.qml` check covers Demo → Live (IDLE / STARTING / LIVE / ERROR) → Benchmark → Demo. `python -m pytest -q` from the repo root still stops during collection on vendored `external/DeepFilterNet` tests (missing `librosa` / `matplotlib`); those are not part of this GUI change.
 
+### Telemetry ownership and terminology (2026-09-27)
+
+Telemetry is scoped by `GUIBridge` operation mode and an incrementing session token. Mode changes discard pending snapshots, scalar values, waveform data, and history sparklines, so measurements from LIVE cannot appear in DEMO or BENCHMARK. DEMO and LIVE controllers open a fresh telemetry session at playback/capture start; stopping holds the final values with an explicit session note, while reset/recovery clears them.
+
+| Metric | Source and display contract |
+|--------|-----------------------------|
+| Processing latency | Measured `process_stream` chunk time, displayed as **PROCESSING LATENCY**. DEMO may display this because its recorded pipeline measures it; it is not end-to-end delay. |
+| Real-time factor | Processing time divided by input chunk duration, displayed as **PROCESSING RTF**. It is not wall-clock or end-to-end live RTF. |
+| Input overflows | Live PortAudio `input_overflows` counter, displayed as **INPUT OVERFLOWS**. It is not network packet loss. DEMO and BENCHMARK show `—`. |
+| Buffer fill | Not measured by the GUI path; displayed as **BUFFER FILL** with `—` and an explanatory hint. |
+| Waveform statistics | RMS/peak and reduced waveforms are computed from the current mode's published input/output chunks; reset and mode changes clear them. |
+| GUI FPS | Fixed GUI timer configuration and kept in the separate top-right system information block. |
+| Benchmark metrics | Loaded from offline benchmark reports and kept independent from live/demo telemetry. |
+
+**Validation (2026-09-27):** `python scripts/test_gui_telemetry.py` — **9/9 passed**; `python -m compileall -q src/drdo_anc/gui scripts/test_gui_telemetry.py tests/test_gui_telemetry_ownership.py` — passed. The active system Python does not have `pytest` installed, so the pytest wrapper/full pytest suite could not be run in this environment.
+
 #### Remaining limitations (Demo Mode v2)
 
 | Limitation | Detail |

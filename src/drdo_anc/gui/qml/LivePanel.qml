@@ -94,23 +94,27 @@ Item {
             Text { text: "Sample rate"; color: dim; font.pixelSize: 10 }
             Text { text: guiBridge.sampleRate + " Hz"; color: white; font.pixelSize: 10 }
 
-            Text { text: "Processing"; color: dim; font.pixelSize: 10 }
+            Text { text: guiBridge.processingLatencyLabel; color: dim; font.pixelSize: 10 }
             Text {
-                text: guiBridge.processingTimeMs.toFixed(2) + " ms"
+                text: guiBridge.processingMeasured
+                    ? guiBridge.processingValueText + " ms"
+                    : guiBridge.processingValueText
                 color: white
                 font.pixelSize: 10
             }
 
-            Text { text: "RTF"; color: dim; font.pixelSize: 10 }
+            Text { text: guiBridge.rtfLabel; color: dim; font.pixelSize: 10 }
             Text {
-                text: guiBridge.realtimeFactor.toFixed(2) + "x"
+                text: guiBridge.rtfMeasured
+                    ? guiBridge.rtfValueText + "x"
+                    : guiBridge.rtfValueText
                 color: white
                 font.pixelSize: 10
             }
 
-            Text { text: "Input overflows"; color: dim; font.pixelSize: 10 }
+            Text { text: guiBridge.overflowLabel; color: dim; font.pixelSize: 10 }
             Text {
-                text: guiBridge.liveInputOverflows
+                text: guiBridge.overflowValueText
                 color: white
                 font.pixelSize: 10
             }

@@ -14,7 +14,19 @@ from drdo_anc.gui.mode_presentation import (
     stop_live_enabled,
     visible_controls,
 )
-from drdo_anc.gui.telemetry import AudioTelemetry
+from drdo_anc.gui.telemetry import (
+  BUFFER_FILL_HINT,
+  BUFFER_FILL_LABEL,
+  INPUT_OVERFLOWS_HINT_LIVE,
+  INPUT_OVERFLOWS_HINT_UNAVAILABLE,
+  INPUT_OVERFLOWS_LABEL,
+  PROCESSING_LATENCY_HINT,
+  PROCESSING_LATENCY_LABEL,
+  PROCESSING_RTF_HINT,
+  PROCESSING_RTF_LABEL,
+  TELEMETRY_UNAVAILABLE,
+  AudioTelemetry,
+)
 from drdo_anc.gui.waveform import WaveformProcessor
 
 
@@ -27,6 +39,8 @@ class _TelemetrySnapshot:
   processing_time_s: float = 0.0
   stats: dict[str, float | int] = field(default_factory=dict)
   has_update: bool = False
+  source_mode: str = ""
+  session_token: int = -1
 
 
 class GUIBridge(QObject):
@@ -63,22 +77,26 @@ class GUIBridge(QObject):
     self._latest_output_waveform: list[float] = []
 
     self._history_len = 100
-    self._proc_time_hist = collections.deque(
-      [0.0] * self._history_len,
+    self._proc_time_hist: collections.deque[float] = collections.deque(
       maxlen=self._history_len,
     )
-    self._buffer_fill_hist = collections.deque(
-      [0.0] * self._history_len,
+    self._buffer_fill_hist: collections.deque[float] = collections.deque(
       maxlen=self._history_len,
     )
-    self._dropped_hist = collections.deque(
-      [0.0] * self._history_len,
+    self._dropped_hist: collections.deque[float] = collections.deque(
       maxlen=self._history_len,
     )
-    self._rtf_hist = collections.deque(
-      [0.0] * self._history_len,
+    self._rtf_hist: collections.deque[float] = collections.deque(
       maxlen=self._history_len,
     )
+    self._telemetry_token = 0
+    self._telemetry_session_open = False
+    self._telemetry_hold_note = ""
+    self._telemetry_note = ""
+    self._processing_measured = False
+    self._rtf_measured = False
+    self._overflow_measured = False
+    self._overflow_count = 0
 
     self._phase = 0.0
     self._telemetry_lock = threading.Lock()
@@ -181,7 +199,87 @@ class GUIBridge(QObject):
 
   @Property(int, notify=telemetryUpdated)
   def droppedFrames(self) -> int:
-    return self._latest_telemetry.dropped_frames
+    return self._overflow_count if self._overflow_measured else 0
+
+  @Property(int, constant=True)
+  def guiFps(self) -> int:
+    return self._fps
+
+  @Property(bool, notify=telemetryUpdated)
+  def processingMeasured(self) -> bool:
+    return self._processing_measured
+
+  @Property(bool, notify=telemetryUpdated)
+  def rtfMeasured(self) -> bool:
+    return self._rtf_measured
+
+  @Property(bool, notify=telemetryUpdated)
+  def overflowMeasured(self) -> bool:
+    return self._overflow_measured
+
+  @Property(bool, notify=telemetryUpdated)
+  def bufferMeasured(self) -> bool:
+    return False
+
+  @Property(str, notify=telemetryUpdated)
+  def processingValueText(self) -> str:
+    if not self._processing_measured:
+      return TELEMETRY_UNAVAILABLE
+    return f"{self._latest_telemetry.processing_time_ms:.2f}"
+
+  @Property(str, notify=telemetryUpdated)
+  def rtfValueText(self) -> str:
+    if not self._rtf_measured:
+      return TELEMETRY_UNAVAILABLE
+    return f"{self._latest_telemetry.realtime_factor:.2f}"
+
+  @Property(str, notify=telemetryUpdated)
+  def overflowValueText(self) -> str:
+    if not self._overflow_measured:
+      return TELEMETRY_UNAVAILABLE
+    return str(self._overflow_count)
+
+  @Property(str, notify=telemetryUpdated)
+  def bufferValueText(self) -> str:
+    return TELEMETRY_UNAVAILABLE
+
+  @Property(str, constant=True)
+  def processingLatencyLabel(self) -> str:
+    return PROCESSING_LATENCY_LABEL
+
+  @Property(str, constant=True)
+  def processingLatencyHint(self) -> str:
+    return PROCESSING_LATENCY_HINT
+
+  @Property(str, constant=True)
+  def rtfLabel(self) -> str:
+    return PROCESSING_RTF_LABEL
+
+  @Property(str, constant=True)
+  def rtfHint(self) -> str:
+    return PROCESSING_RTF_HINT
+
+  @Property(str, constant=True)
+  def overflowLabel(self) -> str:
+    return INPUT_OVERFLOWS_LABEL
+
+  @Property(str, notify=telemetryUpdated)
+  def overflowHint(self) -> str:
+    if self._operation_mode == "live":
+      return INPUT_OVERFLOWS_HINT_LIVE
+    return INPUT_OVERFLOWS_HINT_UNAVAILABLE
+
+  @Property(str, constant=True)
+  def bufferFillLabel(self) -> str:
+    return BUFFER_FILL_LABEL
+
+  @Property(str, constant=True)
+  def bufferFillHint(self) -> str:
+    return BUFFER_FILL_HINT
+
+  @Property(str, notify=telemetryUpdated)
+  def telemetryNote(self) -> str:
+    return self._telemetry_note
 
   @Property(str, notify=telemetryUpdated)
   def modelName(self) -> str:
@@ -369,6 +467,7 @@ class GUIBridge(QObject):
       duration_s=self._demo_duration_s,
       live_status=self._live_status,
       overflows=self._live_input_overflows,
+      overflows_measured=self._overflow_measured,
     )
 
   @Property(bool, notify=modePresentationChanged)
@@ -841,6 +940,7 @@ class GUIBridge(QObject):
     self.demoStateChanged.emit()
     self.benchmarkStateChanged.emit()
     self._emit_mode_presentation()
+    self.clear_mode_telemetry()
 
   def set_benchmark_presentation(
     self,
@@ -1046,6 +1146,65 @@ class GUIBridge(QObject):
     self._latest_telemetry.sample_rate = sample_rate
     self.telemetryUpdated.emit()
 
+  def begin_telemetry_session(self) -> None:
+    """Drop held numbers and start a new measurement session for this mode."""
+
+    self._discard_pending_snapshot()
+    self._reset_measurement_values()
+    self._telemetry_token += 1
+    self._telemetry_session_open = True
+    self._telemetry_hold_note = ""
+    self._emit_measurement_signals()
+
+  def end_telemetry_session(self, note: str) -> None:
+    """Keep the last samples from this session and label them as held."""
+
+    self._telemetry_session_open = False
+    self._telemetry_hold_note = note
+    if self._processing_measured or self._overflow_measured:
+      self._telemetry_note = note
+    self.telemetryUpdated.emit()
+
+  def clear_mode_telemetry(self) -> None:
+    """Forget measurements so another mode cannot display them."""
+
+    self._discard_pending_snapshot()
+    self._telemetry_token += 1
+    self._telemetry_session_open = False
+    self._telemetry_hold_note = ""
+    self._reset_measurement_values()
+    self._emit_measurement_signals()
+
+  def _discard_pending_snapshot(self) -> None:
+    with self._telemetry_lock:
+      self._pending_snapshot = _TelemetrySnapshot()
+
+  def _reset_measurement_values(self) -> None:
+    model_name = self._latest_telemetry.model_name
+    sample_rate = self._latest_telemetry.sample_rate
+    self._latest_telemetry = AudioTelemetry()
+    self._latest_telemetry.model_name = model_name
+    self._latest_telemetry.sample_rate = sample_rate
+    self._processing_measured = False
+    self._rtf_measured = False
+    self._overflow_measured = False
+    self._overflow_count = 0
+    self._live_input_overflows = 0
+    self._telemetry_note = ""
+    self._proc_time_hist.clear()
+    self._buffer_fill_hist.clear()
+    self._dropped_hist.clear()
+    self._rtf_hist.clear()
+    self._latest_input_waveform = []
+    self._latest_output_waveform = []
+
+  def _emit_measurement_signals(self) -> None:
+    self.telemetryUpdated.emit()
+    self.historyUpdated.emit()
+    self.liveStateChanged.emit()
+    self.inputWaveformUpdated.emit(self._latest_input_waveform)
+    self.outputWaveformUpdated.emit(self._latest_output_waveform)
+
   def publish_data(
     self,
     input_chunk: np.ndarray,
@@ -1069,6 +1228,8 @@ class GUIBridge(QObject):
       processing_time_s=proc_time_s,
       stats=dict(stats) if stats else {},
       has_update=True,
+      source_mode=self._operation_mode,
+      session_token=self._telemetry_token,
     )
 
     with self._telemetry_lock:
@@ -1083,10 +1244,18 @@ class GUIBridge(QObject):
       self._pending_snapshot = _TelemetrySnapshot()
       return snapshot
 
-  def _apply_snapshot(self, snapshot: _TelemetrySnapshot) -> None:
+  def _apply_snapshot(self, snapshot: _TelemetrySnapshot) -> bool:
+    if snapshot.session_token != self._telemetry_token:
+      return False
+    if snapshot.source_mode != self._operation_mode:
+      return False
+    if self._operation_mode not in {"demo", "live"}:
+      return False
+
     t = self._latest_telemetry
-    t.is_live = self._live_status == "LIVE" or self._operation_mode == "live"
+    t.is_live = self._operation_mode == "live"
     t.processing_time_ms = snapshot.processing_time_s * 1000.0
+    self._processing_measured = True
 
     input_chunk = snapshot.input_chunk
     output_chunk = snapshot.output_chunk
@@ -1103,20 +1272,28 @@ class GUIBridge(QObject):
       t.output_level_db = 20 * math.log10(rms_out)
       t.output_peak_db = 20 * math.log10(peak_out)
 
-    if snapshot.stats:
-      t.dropped_frames = int(
-        snapshot.stats.get("input_overflows", 0)
-        + snapshot.stats.get("output_underflows", 0)
-      )
+    chunk_samples = len(input_chunk) if input_chunk is not None else 0
+    chunk_duration = chunk_samples / max(1, t.sample_rate)
+    if chunk_duration > 0:
+      # Processing RTF: time inside process_stream divided by chunk duration.
+      # This is not wall-clock RTF and not an end-to-end live factor.
+      t.realtime_factor = snapshot.processing_time_s / chunk_duration
+      self._rtf_measured = True
 
-      chunk_samples = len(input_chunk) if input_chunk is not None else 0
-      chunk_duration = chunk_samples / max(1, t.sample_rate)
-      if chunk_duration > 0:
-        t.realtime_factor = snapshot.processing_time_s / chunk_duration
-        t.buffer_fill_percent = min(
-          100.0,
-          max(0.0, t.realtime_factor * 100.0),
-        )
+    # Buffer fill is not read from PortAudio or the playback queue.
+    t.buffer_fill_percent = 0.0
+
+    if self._operation_mode == "live" and "input_overflows" in snapshot.stats:
+      overflows = int(snapshot.stats.get("input_overflows", 0))
+      self._overflow_count = overflows
+      self._overflow_measured = True
+      self._live_input_overflows = overflows
+      t.dropped_frames = overflows
+
+    if self._telemetry_session_open:
+      self._telemetry_note = ""
+    elif self._telemetry_hold_note:
+      self._telemetry_note = self._telemetry_hold_note
 
     input_reduced, output_reduced = self._waveform_processor.process(
       input_chunk if input_chunk is not None else np.array([], dtype=np.float32),
@@ -1124,55 +1301,42 @@ class GUIBridge(QObject):
     )
     self._latest_input_waveform = input_reduced.tolist()
     self._latest_output_waveform = output_reduced.tolist()
+    return True
 
   @Slot()
   def _on_timeout(self) -> None:
     snapshot = self._consume_snapshot()
+    applied = False
 
     if snapshot is not None:
-      self._apply_snapshot(snapshot)
-    elif self._use_fake_visuals and not self._latest_telemetry.is_live:
-      self._generate_fake_data()
+      applied = self._apply_snapshot(snapshot)
+    elif (
+      self._use_fake_visuals
+      and not self._telemetry_session_open
+      and not self._processing_measured
+      and self._operation_mode != "benchmark"
+    ):
+      self._generate_fake_waveforms()
 
-    t = self._latest_telemetry
-    self._proc_time_hist.append(t.processing_time_ms)
-    self._buffer_fill_hist.append(t.buffer_fill_percent)
-    self._dropped_hist.append(float(t.dropped_frames))
-    self._rtf_hist.append(t.realtime_factor)
+    if applied:
+      t = self._latest_telemetry
+      self._proc_time_hist.append(t.processing_time_ms)
+      if self._rtf_measured:
+        self._rtf_hist.append(t.realtime_factor)
+      if self._overflow_measured:
+        self._dropped_hist.append(float(self._overflow_count))
+      self.historyUpdated.emit()
 
     self.telemetryUpdated.emit()
-    self.historyUpdated.emit()
     self.inputWaveformUpdated.emit(self._latest_input_waveform)
     self.outputWaveformUpdated.emit(self._latest_output_waveform)
 
-  def _generate_fake_data(self) -> None:
-    self._phase += 0.15
-    t = self._latest_telemetry
+  def _generate_fake_waveforms(self) -> None:
+    """Animate waveforms for --fake. Do not invent latency, RTF, or overflows."""
 
+    self._phase += 0.15
     envelope = max(0, math.sin(self._phase * 0.4) * math.sin(self._phase * 0.13))
     envelope = envelope**2
-
-    base_vol = -50 + (envelope * 45)
-    t.input_level_db = base_vol
-    t.input_peak_db = min(0, base_vol + 6 + np.random.uniform(0, 4))
-
-    out_vol = base_vol - 2
-    t.output_level_db = out_vol
-    t.output_peak_db = min(0, out_vol + 4 + np.random.uniform(0, 3))
-
-    t.processing_time_ms = (
-      4.1 + math.sin(self._phase * 0.5) * 0.3 + np.random.uniform(0, 0.1)
-    )
-    t.realtime_factor = (
-      0.45 + math.sin(self._phase * 0.3) * 0.02 + np.random.uniform(-0.01, 0.01)
-    )
-    t.buffer_fill_percent = max(
-      0,
-      min(100, 15 + math.sin(self._phase * 1.5) * 4 + np.random.uniform(0, 2)),
-    )
-    t.dropped_frames = 0 if np.random.random() > 0.02 else 1
-    t.model_name = "DeepFilterNet3"
-    t.sample_rate = 48000
 
     x = np.linspace(0, 10 * np.pi, 500)
     carrier = (

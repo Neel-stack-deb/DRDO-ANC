@@ -36,6 +36,7 @@ from drdo_anc.gui.demo_state import (
     DEMO_STATUS_STOPPED,
     playing_status_for_ab_mode,
 )
+from drdo_anc.gui.telemetry import HOLD_DEMO
 from drdo_anc.enhancement.finetuned import FINETUNED_MODEL_NAME
 
 DEFAULT_CHUNK_SIZE = 1024
@@ -436,6 +437,21 @@ class DemoAudioController:
     def _current_scenario(self) -> DemoScenario:
         return get_scenario_by_index(self._catalog, self._scenario_index)
 
+    def _begin_telemetry_session(self) -> None:
+        begin = getattr(self._bridge, "begin_telemetry_session", None)
+        if begin is not None:
+            begin()
+
+    def _end_telemetry_session(self) -> None:
+        end = getattr(self._bridge, "end_telemetry_session", None)
+        if end is not None:
+            end(HOLD_DEMO)
+
+    def _clear_telemetry(self) -> None:
+        clear = getattr(self._bridge, "clear_mode_telemetry", None)
+        if clear is not None:
+            clear()
+
     def _set_demo_status(self, status: str) -> None:
         setter = getattr(self._bridge, "set_demo_status", None)
         if setter is not None:
@@ -691,11 +707,13 @@ class DemoAudioController:
 
             self._set_demo_status(DEMO_STATUS_LOADING)
             self._bridge.clear_error()
+            self._begin_telemetry_session()
 
             try:
                 self._build_pipeline()
             except DemoManifestError as exc:
                 self._safe_teardown()
+                self._end_telemetry_session()
                 self._bridge.set_error(f"Demo asset invalid: {exc}")
                 self._bridge.set_audio_status("Error")
                 self._set_demo_status(DEMO_STATUS_ERROR)
@@ -703,6 +721,7 @@ class DemoAudioController:
                 return
             except Exception as exc:
                 self._safe_teardown()
+                self._end_telemetry_session()
                 self._bridge.set_error(_friendly_output_error(exc))
                 self._bridge.set_audio_status("Error")
                 self._set_demo_status(DEMO_STATUS_ERROR)
@@ -739,6 +758,7 @@ class DemoAudioController:
                     self._bridge.set_playback_state("stopped")
                     self._bridge.set_audio_status("Stopped")
                     self._bridge.set_pipeline_stage("input")
+                    self._end_telemetry_session()
                     if errored:
                         self._set_demo_status(DEMO_STATUS_ERROR)
                     else:
@@ -770,6 +790,7 @@ class DemoAudioController:
             self._bridge.set_audio_status("Stopped")
             self._bridge.set_pipeline_stage("input")
             self._set_demo_status(DEMO_STATUS_STOPPED)
+            self._end_telemetry_session()
 
     def reset(self) -> None:
         """Stop playback, release devices, and return to a clean idle state."""
@@ -782,6 +803,7 @@ class DemoAudioController:
             self._bridge.clear_error()
             self._publish_scenario_metadata(self._current_scenario())
             self._set_demo_status(DEMO_STATUS_IDLE)
+            self._clear_telemetry()
 
     def shutdown(self) -> None:
         with self._session_lock:
