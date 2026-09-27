@@ -73,6 +73,7 @@ class _BridgeProbe:
         self.audio_status = ""
         self.pipeline_stage = ""
         self.live_overflows = 0
+        self.ab_mode = "raw"
 
     def set_error(self, message: str) -> None:
         self.errors.append(message)
@@ -123,6 +124,9 @@ class _BridgeProbe:
 
     def set_live_input_overflows(self, count: int) -> None:
         self.live_overflows = count
+
+    def set_ab_mode(self, mode: str) -> None:
+        self.ab_mode = mode
 
     def set_live_device_summaries(self, **kwargs) -> None:
         return None
