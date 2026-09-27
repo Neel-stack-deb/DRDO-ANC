@@ -43,7 +43,7 @@ Window {
             Text {
                 text: "DRDO-ANC"
                 color: white
-                font.pixelSize: 48
+                font.pixelSize: 32
                 font.bold: true
                 font.letterSpacing: -1
                 Layout.alignment: Qt.AlignLeft
@@ -52,7 +52,7 @@ Window {
             Text {
                 text: guiBridge.demoSourceLabel
                 color: cyan
-                font.pixelSize: 48
+                font.pixelSize: 32
                 font.bold: true
                 Layout.alignment: Qt.AlignLeft
             }
@@ -74,7 +74,7 @@ Window {
                 Layout.alignment: Qt.AlignRight
                 Text { text: "MODEL: " + guiBridge.modelName; color: lightGrey; font.pixelSize: 10 }
                 Text { text: "SAMPLE RATE: " + guiBridge.sampleRate; color: lightGrey; font.pixelSize: 10 }
-                Text { text: "GUI FPS: 60"; color: lightGrey; font.pixelSize: 10 }
+                Text { text: "GUI FPS: 30"; color: lightGrey; font.pixelSize: 10 }
             }
         }
         
@@ -92,67 +92,53 @@ Window {
 
         DemoControls {
             Layout.fillWidth: true
-            Layout.preferredHeight: 240
+            Layout.preferredHeight: implicitHeight
         }
 
         BenchmarkPanel {
             Layout.fillWidth: true
-            Layout.preferredHeight: guiBridge.isBenchmarkMode ? 340 : 0
+            Layout.fillHeight: guiBridge.isBenchmarkMode
+            Layout.preferredHeight: guiBridge.isBenchmarkMode ? -1 : 0
             visible: guiBridge.isBenchmarkMode
         }
 
-        RowLayout {
+        ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 16
+            spacing: 10
             visible: !guiBridge.isBenchmarkMode
 
-            Item {
-                Layout.preferredWidth: 180
-                Layout.fillHeight: true
-                visible: !guiBridge.isBenchmarkMode
-
-                DemoPanel {
-                    anchors.fill: parent
-                    visible: guiBridge.operationMode === "demo"
-                }
-
-                LivePanel {
-                    anchors.fill: parent
-                    visible: guiBridge.operationMode === "live"
-                }
+            Text {
+                Layout.fillWidth: true
+                color: cyan
+                font.pixelSize: 14
+                font.bold: true
+                elide: Text.ElideRight
+                text: guiBridge.operationMode === "demo"
+                    ? (guiBridge.demoStatus + "   ·   " + guiBridge.demoScenario
+                       + "   ·   " + (guiBridge.abMode === "enhanced" ? "B Enhanced" : "A Raw")
+                       + "   ·   " + guiBridge.demoDurationSeconds.toFixed(1) + " s")
+                    : ("LIVE   ·   " + guiBridge.liveStatus
+                       + "   ·   overflows " + guiBridge.liveInputOverflows)
             }
 
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: 16
+                spacing: 12
 
                 ColumnLayout {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     spacing: 4
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            text: guiBridge.operationMode === "demo"
-                                ? guiBridge.demoInputLabel
-                                : "RAW MIC INPUT"
-                            color: white
-                            font.pixelSize: 18
-                            font.bold: true
-                            font.letterSpacing: 1
-                        }
-                        Item { Layout.fillWidth: true }
-                        Rectangle {
-                            color: "transparent"
-                            border.color: cyan
-                            border.width: 1
-                            Layout.preferredWidth: statusText.width + 8
-                            Layout.preferredHeight: statusText.height + 4
-                            Text { id: statusText; text: "STATUS: CAPTURING"; color: cyan; font.pixelSize: 10; anchors.centerIn: parent }
-                        }
+                    Text {
+                        text: guiBridge.operationMode === "demo"
+                            ? guiBridge.demoInputLabel
+                            : "RAW MIC INPUT"
+                        color: white
+                        font.pixelSize: 16
+                        font.bold: true
                     }
 
                     Rectangle {
@@ -183,22 +169,13 @@ Window {
                     Layout.fillHeight: true
                     spacing: 4
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            text: guiBridge.operationMode === "demo"
-                                ? guiBridge.demoOutputLabel
-                                : "CLEAN ENHANCED OUTPUT"
-                            color: white
-                            font.pixelSize: 18
-                            font.bold: true
-                            font.letterSpacing: 1
-                        }
-                        Item { Layout.fillWidth: true }
-                        Text {
-                            text: "ENHANCED"; color: black; font.pixelSize: 10; font.bold: true; padding: 4
-                            Rectangle { anchors.fill: parent; color: cyan; radius: 4; z: -1 }
-                        }
+                    Text {
+                        text: guiBridge.operationMode === "demo"
+                            ? guiBridge.demoOutputLabel
+                            : "ENHANCED OUTPUT"
+                        color: white
+                        font.pixelSize: 16
+                        font.bold: true
                     }
 
                     Rectangle {
@@ -226,7 +203,7 @@ Window {
 
                 Metrics {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 250
+                    Layout.preferredHeight: 210
                 }
             }
         }

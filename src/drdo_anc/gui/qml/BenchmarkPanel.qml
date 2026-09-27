@@ -5,39 +5,61 @@ import QtQuick.Controls
 ScrollView {
     id: root
     clip: true
+    contentWidth: availableWidth
 
-    property color white: "#F0F4F8"
     property color cyan: "#00E5FF"
-    property color dim: "#888888"
+    property color dim: "#9AA8B8"
+    property color white: "#F0F4F8"
     property color warn: "#FFAA66"
     property bool metricsHelpOpen: false
 
-    ColumnLayout {
-        width: root.width
-        spacing: 8
+    function deltaText(value, decimals, suffix) {
+        var sign = value >= 0 ? "+" : ""
+        return sign + value.toFixed(decimals) + suffix
+    }
 
-        Text {
-            text: "OFFLINE BENCHMARK RESULTS"
-            color: cyan
-            font.pixelSize: 11
-            font.bold: true
-        }
+    Column {
+        width: root.availableWidth > 0 ? root.availableWidth : root.width
+        spacing: 18
+        topPadding: 4
+        bottomPadding: 24
 
-        Text {
-            Layout.fillWidth: true
-            wrapMode: Text.WordWrap
-            color: dim
-            font.pixelSize: 9
-            text: "Measured offline on the SIH-26 evaluation protocol. " +
-                  "These numbers are not live microphone measurements."
+        Row {
+            width: parent.width
+            spacing: 12
+
+            Rectangle {
+                width: 4
+                height: 52
+                radius: 2
+                color: cyan
+            }
+
+            Column {
+                width: parent.width - 16
+                spacing: 6
+                Text {
+                    text: "Offline benchmark results"
+                    color: cyan
+                    font.pixelSize: 26
+                    font.bold: true
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    color: dim
+                    font.pixelSize: 15
+                    text: "SIH-26 evaluation protocol · pretrained vs fine-tuned · not live microphone data"
+                }
+            }
         }
 
         Text {
             visible: !guiBridge.benchmarkLoaded
-            Layout.fillWidth: true
+            width: parent.width
             wrapMode: Text.WordWrap
             color: warn
-            font.pixelSize: 11
+            font.pixelSize: 16
             text: guiBridge.benchmarkUnavailableMessage.length > 0
                 ? guiBridge.benchmarkUnavailableMessage
                 : "Benchmark results unavailable."
@@ -45,254 +67,118 @@ ScrollView {
 
         Text {
             visible: guiBridge.benchmarkPartialWarning.length > 0
-            Layout.fillWidth: true
+            width: parent.width
             wrapMode: Text.WordWrap
             color: warn
-            font.pixelSize: 9
+            font.pixelSize: 14
             text: guiBridge.benchmarkPartialWarning
         }
 
-        // --- Development benchmark ---
-        Text {
+        BenchmarkResultCard {
             visible: guiBridge.devBenchmarkAvailable
-            text: guiBridge.devBenchmarkTitle
-            color: white
-            font.pixelSize: 10
-            font.bold: true
-            Layout.topMargin: 6
+            width: parent.width
+            cardTitle: guiBridge.devBenchmarkTitle
+            cardSubtitle: guiBridge.devBenchmarkContext
+            pretrainedSiSdr: guiBridge.devPretrainedSiSdr
+            finetunedSiSdr: guiBridge.devFinetunedSiSdr
+            pretrainedStoi: guiBridge.devPretrainedStoi
+            finetunedStoi: guiBridge.devFinetunedStoi
+            pretrainedPesq: guiBridge.devPretrainedPesq
+            finetunedPesq: guiBridge.devFinetunedPesq
+            pretrainedSnr: guiBridge.devPretrainedSnr
+            finetunedSnr: guiBridge.devFinetunedSnr
+            deltaDb: guiBridge.devSiSdrImprovement
+            improved: guiBridge.devSiSdrImproved
+            paired: guiBridge.devPairedEvaluations
+            degraded: guiBridge.devSiSdrDegraded
+            barCaption: "Mean SI-SDR · development"
         }
 
-        Text {
-            visible: guiBridge.devBenchmarkAvailable
-            Layout.fillWidth: true
-            text: guiBridge.devBenchmarkContext
-            color: dim
-            font.pixelSize: 9
-            lineHeight: 1.2
-            lineHeightMode: Text.ProportionalHeight
-            wrapMode: Text.WordWrap
+        BenchmarkResultCard {
+            visible: guiBridge.rdBenchmarkAvailable
+            width: parent.width
+            cardTitle: guiBridge.rdBenchmarkTitle
+            cardSubtitle: guiBridge.rdHoldoutNote
+            pretrainedSiSdr: guiBridge.rdPretrainedSiSdr
+            finetunedSiSdr: guiBridge.rdFinetunedSiSdr
+            pretrainedStoi: guiBridge.rdPretrainedStoi
+            finetunedStoi: guiBridge.rdFinetunedStoi
+            pretrainedPesq: guiBridge.rdPretrainedPesq
+            finetunedPesq: guiBridge.rdFinetunedPesq
+            pretrainedSnr: guiBridge.rdPretrainedSnr
+            finetunedSnr: guiBridge.rdFinetunedSnr
+            deltaDb: guiBridge.rdSiSdrImprovement
+            improved: guiBridge.rdSiSdrImproved
+            paired: guiBridge.rdPairedEvaluations
+            degraded: 0
+            extraDetail: guiBridge.rdSuccessfulEvaluations + " evaluations per model"
+            barCaption: "Mean SI-SDR · recording-disjoint"
         }
 
-        Text {
-            visible: guiBridge.devBenchmarkAvailable
-            text: "MODEL COMPARISON"
-            color: dim
-            font.pixelSize: 9
-            font.bold: true
-        }
+        Rectangle {
+            visible: guiBridge.benchmarkLoaded
+            width: parent.width
+            height: metaCol.implicitHeight + 32
+            radius: 12
+            color: "#121820"
+            border.color: "#2A3544"
 
-        GridLayout {
-            visible: guiBridge.devBenchmarkAvailable
-            columns: 3
-            columnSpacing: 8
-            rowSpacing: 3
-            Layout.fillWidth: true
-
-            Text { text: "Metric"; color: dim; font.pixelSize: 9 }
-            Text { text: "Pretrained"; color: dim; font.pixelSize: 9 }
-            Text { text: "Fine-tuned"; color: dim; font.pixelSize: 9 }
-
-            Text { text: "SI-SDR"; color: white; font.pixelSize: 9 }
-            Text { text: guiBridge.devPretrainedSiSdr.toFixed(2) + " dB"; color: white; font.pixelSize: 9 }
-            Text { text: guiBridge.devFinetunedSiSdr.toFixed(2) + " dB"; color: cyan; font.pixelSize: 9 }
-
-            Text { text: "STOI"; color: white; font.pixelSize: 9 }
-            Text { text: guiBridge.devPretrainedStoi.toFixed(3); color: white; font.pixelSize: 9 }
-            Text { text: guiBridge.devFinetunedStoi.toFixed(3); color: cyan; font.pixelSize: 9 }
-
-            Text { text: "PESQ"; color: white; font.pixelSize: 9 }
-            Text { text: guiBridge.devPretrainedPesq.toFixed(3); color: white; font.pixelSize: 9 }
-            Text { text: guiBridge.devFinetunedPesq.toFixed(3); color: cyan; font.pixelSize: 9 }
-
-            Text { text: "SNR"; color: white; font.pixelSize: 9 }
-            Text { text: guiBridge.devPretrainedSnr.toFixed(2) + " dB"; color: white; font.pixelSize: 9 }
-            Text { text: guiBridge.devFinetunedSnr.toFixed(2) + " dB"; color: cyan; font.pixelSize: 9 }
-        }
-
-        Text {
-            visible: guiBridge.devBenchmarkAvailable
-            text: "FINE-TUNED SI-SDR IMPROVEMENT\n+" + guiBridge.devSiSdrImprovement.toFixed(2) + " dB"
-            color: cyan
-            font.pixelSize: 10
-            font.bold: true
-        }
-
-        Text {
-            visible: guiBridge.devBenchmarkAvailable
-            text: guiBridge.devSiSdrImproved + " / " + guiBridge.devPairedEvaluations +
-                  " paired cases improved" +
-                  (guiBridge.devSiSdrDegraded > 0
-                    ? (" (" + guiBridge.devSiSdrDegraded + " degraded)")
-                    : "")
-            color: white
-            font.pixelSize: 9
-        }
-
-        Item {
-            visible: guiBridge.devBenchmarkAvailable
-            Layout.fillWidth: true
-            Layout.preferredHeight: 72
-
-            readonly property real chartMax: Math.max(guiBridge.devPretrainedSiSdr, guiBridge.devFinetunedSiSdr, 1.0)
-
-            RowLayout {
-                anchors.fill: parent
-                spacing: 16
-
-                ColumnLayout {
-                    spacing: 4
-                    Rectangle {
-                        Layout.preferredWidth: 36
-                        Layout.preferredHeight: Math.max(8, 56 * guiBridge.devPretrainedSiSdr / chartMax)
-                        color: "#556677"
-                    }
-                    Text {
-                        text: "Pretrained\n" + guiBridge.devPretrainedSiSdr.toFixed(2) + " dB"
-                        color: dim
-                        font.pixelSize: 8
-                        horizontalAlignment: Text.AlignHCenter
-                    }
-                }
-
-                ColumnLayout {
-                    spacing: 4
-                    Rectangle {
-                        Layout.preferredWidth: 36
-                        Layout.preferredHeight: Math.max(8, 56 * guiBridge.devFinetunedSiSdr / chartMax)
-                        color: cyan
-                    }
-                    Text {
-                        text: "Fine-tuned\n" + guiBridge.devFinetunedSiSdr.toFixed(2) + " dB"
-                        color: dim
-                        font.pixelSize: 8
-                        horizontalAlignment: Text.AlignHCenter
-                    }
-                }
+            Column {
+                id: metaCol
+                x: 18
+                y: 16
+                width: parent.width - 36
+                spacing: 8
 
                 Text {
-                    text: "Mean SI-SDR (development)"
-                    color: dim
-                    font.pixelSize: 8
-                    Layout.fillWidth: true
+                    text: "Evaluation notes"
+                    color: white
+                    font.pixelSize: 16
+                    font.bold: true
+                }
+                Text {
+                    visible: guiBridge.devBenchmarkAvailable
+                    width: parent.width
                     wrapMode: Text.WordWrap
+                    color: dim
+                    font.pixelSize: 14
+                    text: "Development · " + guiBridge.devRulesVersion +
+                          " · " + guiBridge.devEvaluationModes +
+                          " · " + guiBridge.benchmarkPretrainedModel +
+                          " vs " + guiBridge.benchmarkFinetunedModel
+                }
+                Text {
+                    visible: guiBridge.rdBenchmarkAvailable
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    color: dim
+                    font.pixelSize: 14
+                    text: "Recording-disjoint · " + guiBridge.rdRulesVersion
+                }
+                Text {
+                    text: metricsHelpOpen ? "Hide metric guide" : "What do these metrics mean?"
+                    color: cyan
+                    font.pixelSize: 14
+                    font.underline: helpMouse.containsMouse
+                    MouseArea {
+                        id: helpMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: metricsHelpOpen = !metricsHelpOpen
+                    }
+                }
+                Text {
+                    visible: metricsHelpOpen
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    color: dim
+                    font.pixelSize: 14
+                    text: "SI-SDR — speech vs distortion (higher is better).\n" +
+                          "STOI — intelligibility, 0 to 1.\n" +
+                          "PESQ — perceived quality.\n" +
+                          "SNR — signal-to-noise ratio in dB."
                 }
             }
-        }
-
-        // --- Recording-disjoint ---
-        Text {
-            visible: guiBridge.rdBenchmarkAvailable
-            text: guiBridge.rdBenchmarkTitle
-            color: white
-            font.pixelSize: 10
-            font.bold: true
-            Layout.topMargin: 10
-        }
-
-        Text {
-            visible: guiBridge.rdBenchmarkAvailable && guiBridge.rdHoldoutNote.length > 0
-            Layout.fillWidth: true
-            wrapMode: Text.WordWrap
-            color: warn
-            font.pixelSize: 9
-            text: guiBridge.rdHoldoutNote
-        }
-
-        GridLayout {
-            visible: guiBridge.rdBenchmarkAvailable
-            columns: 3
-            columnSpacing: 8
-            rowSpacing: 3
-            Layout.fillWidth: true
-
-            Text { text: "Metric"; color: dim; font.pixelSize: 9 }
-            Text { text: "Pretrained"; color: dim; font.pixelSize: 9 }
-            Text { text: "Fine-tuned"; color: dim; font.pixelSize: 9 }
-
-            Text { text: "SI-SDR"; color: white; font.pixelSize: 9 }
-            Text { text: guiBridge.rdPretrainedSiSdr.toFixed(2) + " dB"; color: white; font.pixelSize: 9 }
-            Text { text: guiBridge.rdFinetunedSiSdr.toFixed(2) + " dB"; color: cyan; font.pixelSize: 9 }
-
-            Text { text: "STOI"; color: white; font.pixelSize: 9 }
-            Text { text: guiBridge.rdPretrainedStoi.toFixed(3); color: white; font.pixelSize: 9 }
-            Text { text: guiBridge.rdFinetunedStoi.toFixed(3); color: cyan; font.pixelSize: 9 }
-
-            Text { text: "PESQ"; color: white; font.pixelSize: 9 }
-            Text { text: guiBridge.rdPretrainedPesq.toFixed(3); color: white; font.pixelSize: 9 }
-            Text { text: guiBridge.rdFinetunedPesq.toFixed(3); color: cyan; font.pixelSize: 9 }
-
-            Text { text: "SNR"; color: white; font.pixelSize: 9 }
-            Text { text: guiBridge.rdPretrainedSnr.toFixed(2) + " dB"; color: white; font.pixelSize: 9 }
-            Text { text: guiBridge.rdFinetunedSnr.toFixed(2) + " dB"; color: cyan; font.pixelSize: 9 }
-        }
-
-        Text {
-            visible: guiBridge.rdBenchmarkAvailable
-            text: "FINE-TUNED SI-SDR IMPROVEMENT\n+" + guiBridge.rdSiSdrImprovement.toFixed(2) + " dB"
-            color: cyan
-            font.pixelSize: 10
-            font.bold: true
-        }
-
-        Text {
-            visible: guiBridge.rdBenchmarkAvailable
-            text: guiBridge.rdSiSdrImproved + " / " + guiBridge.rdPairedEvaluations +
-                  " successful paired evaluations (" + guiBridge.rdSuccessfulEvaluations + " per model)"
-            color: white
-            font.pixelSize: 9
-        }
-
-        Text {
-            visible: guiBridge.benchmarkLoaded
-            text: "Evaluation information"
-            color: dim
-            font.pixelSize: 9
-            font.bold: true
-            Layout.topMargin: 8
-        }
-
-        Text {
-            visible: guiBridge.devBenchmarkAvailable
-            Layout.fillWidth: true
-            wrapMode: Text.WordWrap
-            color: dim
-            font.pixelSize: 8
-            text: "Development: rules " + guiBridge.devRulesVersion +
-                  "; modes " + guiBridge.devEvaluationModes +
-                  "; models " + guiBridge.benchmarkPretrainedModel + " vs " +
-                  guiBridge.benchmarkFinetunedModel + "; offline reports " +
-                  guiBridge.devPretrainedSource + " / " + guiBridge.devFinetunedSource
-        }
-
-        Text {
-            visible: guiBridge.rdBenchmarkAvailable
-            Layout.fillWidth: true
-            wrapMode: Text.WordWrap
-            color: dim
-            font.pixelSize: 8
-            text: "Recording-disjoint: rules " + guiBridge.rdRulesVersion +
-                  "; models " + guiBridge.benchmarkPretrainedModel + " vs " +
-                  guiBridge.benchmarkFinetunedModel
-        }
-
-        Button {
-            text: metricsHelpOpen ? "Hide metric explanations" : "What do these metrics mean?"
-            flat: true
-            font.pixelSize: 9
-            palette.buttonText: cyan
-            onClicked: metricsHelpOpen = !metricsHelpOpen
-        }
-
-        ColumnLayout {
-            visible: metricsHelpOpen
-            Layout.fillWidth: true
-            spacing: 4
-
-            Text { text: "SI-SDR: Measures how well the enhanced signal preserves the target speech relative to distortion."; color: dim; font.pixelSize: 8; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-            Text { text: "STOI: Measures speech intelligibility."; color: dim; font.pixelSize: 8; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-            Text { text: "PESQ: Measures perceived speech quality."; color: dim; font.pixelSize: 8; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-            Text { text: "SNR: Measures the ratio between desired signal power and noise power."; color: dim; font.pixelSize: 8; wrapMode: Text.WordWrap; Layout.fillWidth: true }
-            Text { text: "These metrics do not capture every aspect of human listening quality."; color: dim; font.pixelSize: 8; font.italic: true; wrapMode: Text.WordWrap; Layout.fillWidth: true }
         }
     }
 }

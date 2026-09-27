@@ -4,14 +4,17 @@ import QtQuick.Controls
 
 Item {
     id: root
+    implicitHeight: column.implicitHeight
     property color white: "#F0F4F8"
     property color cyan: "#00E5FF"
     property color dim: "#666666"
     property color buttonBg: "#151A22"
     property color buttonActive: "#00E5FF"
+    readonly property bool showAudioControls: !guiBridge.isBenchmarkMode
 
     ColumnLayout {
-        anchors.fill: parent
+        id: column
+        width: root.width
         spacing: 8
 
         RowLayout {
@@ -38,11 +41,20 @@ Item {
             }
 
             Item { Layout.fillWidth: true }
+
+            Text {
+                visible: guiBridge.isBenchmarkMode
+                text: "Read-only results · switch to Demo or Live for audio"
+                color: dim
+                font.pixelSize: 12
+                font.italic: true
+            }
         }
 
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
+            visible: root.showAudioControls
 
             Text { text: "MODEL"; color: dim; font.pixelSize: 10; font.bold: true }
             DeviceCombo {
@@ -74,6 +86,7 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
+            visible: root.showAudioControls
 
             Text { text: "INPUT DEVICE"; color: dim; font.pixelSize: 10; font.bold: true }
             DeviceCombo {
@@ -89,6 +102,7 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
+            visible: root.showAudioControls
 
             Text { text: "OUTPUT DEVICE"; color: dim; font.pixelSize: 10; font.bold: true }
             DeviceCombo {
@@ -103,7 +117,7 @@ Item {
 
         Text {
             Layout.fillWidth: true
-            visible: !guiBridge.liveCanStart && guiBridge.liveBlockReason.length > 0
+            visible: root.showAudioControls && !guiBridge.liveCanStart && guiBridge.liveBlockReason.length > 0
             text: guiBridge.liveBlockReason
             color: "#FF5577"
             font.pixelSize: 11
@@ -130,6 +144,7 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
+            visible: root.showAudioControls
 
             Text { text: "SIH SAFETY"; color: dim; font.pixelSize: 10; font.bold: true }
             DemoButton {
@@ -166,7 +181,7 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
-            visible: guiBridge.liveFallbackOffered
+            visible: root.showAudioControls && guiBridge.liveFallbackOffered
 
             Text {
                 Layout.fillWidth: true
@@ -188,6 +203,7 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
+            visible: root.showAudioControls
 
             Text { text: "TRANSPORT"; color: dim; font.pixelSize: 10; font.bold: true }
             DemoButton { label: "Play"; onActivated: guiBridge.play() }
@@ -233,6 +249,7 @@ Item {
         PipelineChain {
             Layout.fillWidth: true
             Layout.preferredHeight: 24
+            visible: root.showAudioControls
         }
     }
 }
