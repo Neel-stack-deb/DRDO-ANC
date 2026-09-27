@@ -7,14 +7,14 @@ Item {
     implicitHeight: column.implicitHeight
     property color white: "#F0F4F8"
     property color cyan: "#00E5FF"
-    property color dim: "#666666"
+    property color dim: "#8B95A7"
     property color buttonBg: "#151A22"
     property color buttonActive: "#00E5FF"
 
     ColumnLayout {
         id: column
         width: root.width
-        spacing: 8
+        spacing: 6
 
         RowLayout {
             Layout.fillWidth: true
@@ -156,7 +156,7 @@ Item {
             spacing: 8
             visible: guiBridge.showDemoSafety
 
-            Text { text: "SIH SAFETY"; color: dim; font.pixelSize: 10; font.bold: true }
+            Text { text: "PREFLIGHT"; color: dim; font.pixelSize: 10; font.bold: true }
             DemoButton {
                 objectName: "demoPreflightButton"
                 label: "DEMO PREFLIGHT"
@@ -247,20 +247,20 @@ Item {
             Item { Layout.fillWidth: true }
 
             Text {
-                text: "A/B"
+                text: "OUTPUT"
                 color: dim
                 font.pixelSize: 10
                 font.bold: true
             }
             DemoButton {
                 objectName: "abRawButton"
-                label: guiBridge.abMode === "raw" ? "● A Raw" : "A Raw"
+                label: guiBridge.abMode === "raw" ? "● A — RAW" : "A — RAW"
                 active: guiBridge.abMode === "raw"
                 onActivated: guiBridge.selectAbRaw()
             }
             DemoButton {
                 objectName: "abEnhancedButton"
-                label: guiBridge.abMode === "enhanced" ? "● B Enhanced" : "B Enhanced"
+                label: guiBridge.abMode === "enhanced" ? "● B — ENHANCED" : "B — ENHANCED"
                 active: guiBridge.abMode === "enhanced"
                 onActivated: guiBridge.selectAbEnhanced()
             }
@@ -295,6 +295,27 @@ Item {
                 label: "STOP"
                 onActivated: guiBridge.stopLive()
             }
+            Text {
+                visible: guiBridge.operationMode === "live"
+                text: "OUTPUT"
+                color: dim
+                font.pixelSize: 10
+                font.bold: true
+            }
+            DemoButton {
+                objectName: "liveAbRawButton"
+                visible: guiBridge.operationMode === "live"
+                label: guiBridge.abMode === "raw" ? "● A — RAW" : "A — RAW"
+                active: guiBridge.abMode === "raw"
+                onActivated: guiBridge.selectAbRaw()
+            }
+            DemoButton {
+                objectName: "liveAbEnhancedButton"
+                visible: guiBridge.operationMode === "live"
+                label: guiBridge.abMode === "enhanced" ? "● B — ENHANCED" : "B — ENHANCED"
+                active: guiBridge.abMode === "enhanced"
+                onActivated: guiBridge.selectAbEnhanced()
+            }
             DemoButton {
                 objectName: "recoverLiveButton"
                 visible: guiBridge.showRecoverLive
@@ -305,7 +326,7 @@ Item {
 
         PipelineChain {
             Layout.fillWidth: true
-            Layout.preferredHeight: 24
+            Layout.preferredHeight: 34
             visible: guiBridge.showAudioSelectors
         }
     }

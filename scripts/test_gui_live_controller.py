@@ -14,6 +14,7 @@ src_dir = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(src_dir))
 
 from drdo_anc.audio.live.fake import FakeAudioInput, FakeAudioOutput
+from drdo_anc.gui.demo import SelectableAudioOutput
 from drdo_anc.gui.devices import (
     GuiAudioDevice,
     devices_from_records,
@@ -187,6 +188,52 @@ def test_start_stop_lifecycle() -> None:
     assert controller._audio_thread is None
 
 
+def test_selectable_output_routes_raw_and_enhanced() -> None:
+    sink = FakeAudioOutput(48_000)
+    output = SelectableAudioOutput(sink)
+    raw = np.full(8, 0.25, dtype=np.float32)
+    enhanced = np.full(8, 0.75, dtype=np.float32)
+
+    output.prepare_raw(raw)
+    output.write(enhanced)
+    np.testing.assert_array_equal(sink.all_written(), raw)
+
+    output.set_mode("enhanced")
+    output.write(enhanced)
+    np.testing.assert_array_equal(sink.all_written(), np.concatenate((raw, enhanced)))
+
+    output.set_mode("raw")
+    output.write(enhanced)
+    np.testing.assert_array_equal(
+        sink.all_written(), np.concatenate((raw, enhanced, raw))
+    )
+
+
+def test_live_output_switch_does_not_replace_pipeline_or_model() -> None:
+    bridge = _Bridge()
+    created = {"count": 0}
+
+    def create(_name):
+        created["count"] += 1
+        return _SlowEnhancer()
+
+    controller = LiveAudioController(
+        _args(),
+        bridge,
+        open_io=_open_fake_io,
+        create_enhancer=create,
+    )
+    controller.start()
+    pipeline = controller._pipeline
+    controller.set_output_mode("enhanced")
+    controller.set_output_mode("raw")
+    controller.set_output_mode("enhanced")
+    assert controller._pipeline is pipeline
+    assert created["count"] == 1
+    assert controller.output_mode == "enhanced"
+    controller.stop()
+
+
 def test_repeated_start_is_idempotent() -> None:
     bridge = _Bridge()
     controller = LiveAudioController(
@@ -316,6 +363,8 @@ def main() -> int:
         test_invalid_output_device_message,
         test_validate_live_sample_rate_mismatch,
         test_start_stop_lifecycle,
+        test_selectable_output_routes_raw_and_enhanced,
+        test_live_output_switch_does_not_replace_pipeline_or_model,
         test_repeated_start_is_idempotent,
         test_repeated_stop_is_idempotent,
         test_start_stop_start_cycle,

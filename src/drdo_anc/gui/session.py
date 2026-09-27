@@ -446,6 +446,8 @@ class ApplicationSession:
         self._bridge.clear_error()
         self._demo_controller.stop()
         self._mode = "live"
+        self._live_controller.set_output_mode("raw")
+        self._bridge.set_ab_mode("raw")
         self._bridge.set_operation_mode("live")
         self._bridge.set_live_status(LIVE_STATUS_IDLE)
         self._publish_live_device_summaries()
@@ -485,6 +487,8 @@ class ApplicationSession:
 
         self._publish_live_device_summaries()
         self._apply_io_to_controllers()
+        self._live_controller.set_output_mode("raw")
+        self._bridge.set_ab_mode("raw")
         self._bridge.set_live_input_overflows(0)
         self._bridge.clear_error()
         self._live_controller.start()
@@ -630,10 +634,18 @@ class ApplicationSession:
         self.set_demo_mode()
 
     def set_ab_raw(self) -> None:
-        self._demo_controller.set_ab_mode("raw")
+        if self._mode == "live":
+            self._live_controller.set_output_mode("raw")
+            self._bridge.set_ab_mode("raw")
+        else:
+            self._demo_controller.set_ab_mode("raw")
 
     def set_ab_enhanced(self) -> None:
-        self._demo_controller.set_ab_mode("enhanced")
+        if self._mode == "live":
+            self._live_controller.set_output_mode("enhanced")
+            self._bridge.set_ab_mode("enhanced")
+        else:
+            self._demo_controller.set_ab_mode("enhanced")
 
     def shutdown(self) -> None:
         self._demo_controller.shutdown()

@@ -49,7 +49,7 @@ Window {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 16
-        spacing: 16
+        spacing: 12
         
         // Header
         RowLayout {
@@ -58,7 +58,7 @@ Window {
             Text {
                 text: "DRDO-ANC"
                 color: white
-                font.pixelSize: 32
+                font.pixelSize: 30
                 font.bold: true
                 font.letterSpacing: -1
                 Layout.alignment: Qt.AlignLeft
@@ -68,7 +68,7 @@ Window {
                 objectName: "modeBanner"
                 text: guiBridge.modeBanner
                 color: cyan
-                font.pixelSize: 32
+                font.pixelSize: 30
                 font.bold: true
                 Layout.alignment: Qt.AlignLeft
             }
@@ -77,24 +77,24 @@ Window {
             
             // System properties small text
             ColumnLayout {
-                spacing: 1
+                spacing: 3
                 Layout.alignment: Qt.AlignRight
                 Text {
                     objectName: "systemModel"
-                    text: "MODEL  " + guiBridge.modelName
-                    color: "#9AA6B8"
+                    text: "MODEL        " + guiBridge.modelName
+                    color: "#B2BDCC"
                     font.pixelSize: 11
                 }
                 Text {
                     objectName: "systemSampleRate"
-                    text: "SAMPLE RATE  " + guiBridge.sampleRate
-                    color: "#9AA6B8"
+                    text: "SAMPLE RATE  " + (guiBridge.sampleRate / 1000).toFixed(0) + " kHz"
+                    color: "#B2BDCC"
                     font.pixelSize: 11
                 }
                 Text {
                     objectName: "systemGuiFps"
-                    text: "GUI FPS  " + guiBridge.guiFps
-                    color: "#9AA6B8"
+                    text: "GUI FPS      " + guiBridge.guiFps
+                    color: "#B2BDCC"
                     font.pixelSize: 11
                 }
             }
@@ -107,7 +107,7 @@ Window {
             Layout.fillWidth: true
             text: guiBridge.modeDescription
             color: "#8B95A7"
-            font.pixelSize: 12
+            font.pixelSize: 13
             wrapMode: Text.WordWrap
         }
 

@@ -52,6 +52,8 @@ QML_CONTROLS = {
     "ab_enhanced": "abEnhancedButton",
     "start_live": "startLiveButton",
     "stop_live": "stopLiveButton",
+    "live_ab_raw": "liveAbRawButton",
+    "live_ab_enhanced": "liveAbEnhancedButton",
     "live_starting": "liveStartingLabel",
     "recover_live": "recoverLiveButton",
     "live_fallback": "liveFallbackRow",
@@ -173,7 +175,7 @@ def test_activity_caption_does_not_leak_across_modes() -> None:
         live_status=LIVE_STATUS_IDLE,
         overflows=0,
     )
-    assert live == "LIVE   ·   IDLE   ·   overflows —"
+    assert live == "LIVE   ·   IDLE   ·   A RAW   ·   overflows —"
     assert "Mixed Speech" not in live
     assert "3.0 s" not in live
     assert activity_caption(
@@ -246,10 +248,14 @@ def test_qml_modes_do_not_leave_stale_controls() -> None:
     assert ui.item("modeDescription").property("text") == LIVE_DESCRIPTION
     assert "RECORDED DEMO" not in ui.item("modeBanner").property("text")
     live_caption = ui.item("activityCaption").property("text")
-    assert live_caption == "LIVE   ·   IDLE   ·   overflows —"
+    assert live_caption == "LIVE   ·   IDLE   ·   A RAW   ·   overflows —"
     assert "Mixed Speech" not in live_caption
     _assert_qml_matches_policy(ui)
     assert ui.effectively_visible("startLiveButton")
+    assert ui.effectively_visible("liveAbRawButton")
+    assert ui.effectively_visible("liveAbEnhancedButton")
+    assert ui.item("liveAbRawButton").property("active") is True
+    assert ui.item("liveAbEnhancedButton").property("active") is False
     assert ui.item("startLiveButton").property("enabled") is True
     assert not ui.effectively_visible("stopLiveButton")
     assert ui.effectively_visible("modelRow")

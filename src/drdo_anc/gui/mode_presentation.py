@@ -53,6 +53,8 @@ LIVE_ONLY_CONTROLS = frozenset(
         "live_starting",
         "recover_live",
         "live_fallback",
+        "live_ab_raw",
+        "live_ab_enhanced",
     }
 )
 
@@ -101,6 +103,7 @@ def visible_controls(
         return frozenset()
 
     controls = set(SHARED_AUDIO_CONTROLS)
+    controls.update({"live_ab_raw", "live_ab_enhanced"})
     if live_fallback_offered:
         controls.add("live_fallback")
     if live_status == LIVE_STATUS_IDLE and not live_fallback_offered:
@@ -152,5 +155,9 @@ def activity_caption(
         )
     if mode == LIVE_MODE:
         overflow_text = str(overflows) if overflows_measured else "—"
-        return f"LIVE   ·   {live_status}   ·   overflows {overflow_text}"
+        listening = "A RAW" if ab_mode == "raw" else "B ENHANCED"
+        return (
+            f"LIVE   ·   {live_status}   ·   {listening}"
+            f"   ·   overflows {overflow_text}"
+        )
     return ""

@@ -50,7 +50,7 @@ Rectangle {
             verticalAlignment: Text.AlignVCenter
             horizontalAlignment: Text.AlignRight
             text: changeText
-            color: "#66FFCC"
+            color: "#00E5FF"
             font.pixelSize: 14
             font.bold: true
         }

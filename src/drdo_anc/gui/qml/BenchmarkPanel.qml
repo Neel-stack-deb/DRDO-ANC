@@ -20,7 +20,7 @@ ScrollView {
 
     Column {
         width: root.availableWidth > 0 ? root.availableWidth : root.width
-        spacing: 18
+        spacing: 12
         topPadding: 4
         bottomPadding: 24
 
@@ -41,15 +41,15 @@ ScrollView {
                 Text {
                     text: "Offline benchmark results"
                     color: cyan
-                    font.pixelSize: 26
+                    font.pixelSize: 24
                     font.bold: true
                 }
                 Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
                     color: dim
-                    font.pixelSize: 15
-                      text: "Offline evaluation — pretrained vs fine-tuned model. " +
+                    font.pixelSize: 13
+                    text: "Offline evaluation — pretrained vs fine-tuned model. " +
                           "These results are not live microphone measurements."
                 }
             }

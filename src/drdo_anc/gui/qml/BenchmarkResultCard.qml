@@ -23,7 +23,7 @@ Rectangle {
     property color dim: "#9AA8B8"
     property color white: "#F0F4F8"
 
-    height: body.implicitHeight + 36
+    height: body.implicitHeight + 28
     radius: 14
     color: "#141A24"
     border.color: "#3A4A5C"
@@ -39,13 +39,13 @@ Rectangle {
         x: 20
         y: 18
         width: root.width - 40
-        spacing: 14
+        spacing: 10
 
         Text {
             width: parent.width
             text: cardTitle
             color: white
-            font.pixelSize: 20
+            font.pixelSize: 19
             font.bold: true
             wrapMode: Text.WordWrap
         }
@@ -55,7 +55,7 @@ Rectangle {
             visible: cardSubtitle.length > 0
             text: cardSubtitle
             color: dim
-            font.pixelSize: 14
+            font.pixelSize: 13
             wrapMode: Text.WordWrap
         }
 

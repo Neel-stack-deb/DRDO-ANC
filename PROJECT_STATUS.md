@@ -950,6 +950,31 @@ Benchmark presentation remains read-only and continues to load the authoritative
 
 **Validation (2026-09-27):** `python scripts/test_gui_benchmark.py` — **9/9 passed**; `python scripts/test_gui_mode_ui.py` — **6/6 passed**; no benchmark execution is performed by GUI startup or these tests.
 
+### GUI visual polish pass (2026-09-27)
+
+Presentation-only refinement across DEMO, LIVE, and BENCHMARK. The dark telemetry-console identity and cyan accent are preserved; no backend, audio, device, model, or benchmark behavior changed.
+
+| Area | Correction |
+|------|------------|
+| System information | Increased secondary contrast and formatted readouts as `MODEL`, `SAMPLE RATE <kHz>`, and `GUI FPS`. |
+| Demo output | A/B controls now read `A — RAW` and `B — ENHANCED`, with active selection immediately visible. Existing routing remains unchanged. |
+| Pipeline | Existing state indicator remains in place, with `AI ENHANCER` as the understandable stage label and the actual model shown beneath it. |
+| Benchmark | Reduced unused spacing, retained exact metric presentation, and kept factual cyan deltas without winner styling. |
+| Mode flow | Existing DEMO scenario/preflight/transport, LIVE start/stop/recovery, and BENCHMARK read-only separation remain intact. |
+
+**Validation:** `python scripts/test_gui_mode_ui.py` — **6/6 passed**; `python scripts/test_gui_benchmark.py` — **9/9 passed**. Offscreen QML loading completed successfully; only existing Windows/Qt native-style warnings were emitted.
+
+### Live A/B output routing added (2026-09-27)
+
+LIVE now exposes the same compact A/B output choice as DEMO:
+
+- **A RAW** routes the raw microphone chunk to the existing output device.
+- **B ENHANCED** routes the already-produced live model output to the existing output device.
+- Switching A/B changes only the existing `SelectableAudioOutput` route; it does not restart the streaming pipeline, recreate the model, or reset the live session.
+- LIVE entry and successful restart default to **A RAW**. Idle selection is safe and does not start audio.
+
+Waveform telemetry remains independent: `RAW MIC INPUT` and `ENHANCED OUTPUT` continue to show their respective signals regardless of the selected listening route. Physical microphone A/B switching was **not manually verified** in this environment; automated fake-I/O routing and lifecycle tests cover the behavior.
+
 #### Remaining limitations (Demo Mode v2)
 
 | Limitation | Detail |

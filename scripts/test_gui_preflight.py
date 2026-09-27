@@ -162,6 +162,9 @@ class _LiveProbe:
     def set_model_name(self, name: str) -> None:
         return None
 
+    def set_output_mode(self, mode: str) -> None:
+        return None
+
 
 class _DemoProbe:
     def __init__(self) -> None:
