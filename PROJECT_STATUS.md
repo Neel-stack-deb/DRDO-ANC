@@ -205,7 +205,7 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 | `bridge.py` | QObject telemetry bridge | DONE | `GUIBridge` — 60 FPS `QTimer`; thread-safe latest-value handoff from audio thread; QML properties |
 | `telemetry.py` | Scalar telemetry dataclass | DONE | `AudioTelemetry` |
 | `waveform.py` | Visualization downsampling | DONE | `WaveformProcessor` — peak-preserving reduce to 500 points |
-| `qml/Main.qml` | Main telemetry console window | DONE | Waveforms, meters, sparklines, error banner |
+| `qml/Main.qml` | Main telemetry console window | DONE | Mode banner (`RECORDED DEMO` / `LIVE MICROPHONE · <status>` / `BENCHMARK`) and a short mode description |
 | `qml/Waveform.qml` | Canvas oscilloscope | DONE | Raw/enhanced waveform rendering |
 | `qml/Metrics.qml` | LED meters + metric grids | DONE | Peak/RMS, latency, buffer, drops, RTF |
 | `demo.py` | Demo mode replay controller | DONE | Demo Mode v2: `DemoAudioController` lifecycle (`IDLE`/`LOADING`/`PROCESSING`/`PLAYING RAW`/`PLAYING ENHANCED`/`STOPPED`/`ERROR`), `reset()`, re-entrant `stop()`/`reset()`; default model `DeepFilterNet3-Finetuned` |
@@ -220,7 +220,8 @@ Both paths share the same upstream pipeline: manifest → mixture @ 16 kHz → r
 | `session.py` | Demo + live session coordinator | DONE | Job 4: `run_demo_preflight()`, `emergency_reset_demo()`, `try_live_again()`, `use_recorded_demo()`; live failure fallback |
 | `demo_preflight.py` | SIH demo readiness checks | DONE | Job 4: `run_demo_preflight()` — devices, finetuned model, manifest WAVs, benchmark JSON (warning) |
 | `preflight_state.py` | Preflight status constants | DONE | `NOT_CHECKED` / `CHECKING` / `READY` / `WARNING` / `FAILED` |
-| `qml/DemoControls.qml` | Demo transport + scenario UI | DONE | Job 4: **DEMO PREFLIGHT**, **RESET DEMO**, live fallback actions; demo/live/benchmark mode toggles |
+| `mode_presentation.py` | Per-mode control and header rules | DONE | Demo transport vs live START/STOP; banners and one-line mode descriptions. Live has no runtime A/B switch. |
+| `qml/DemoControls.qml` | Demo transport + scenario UI | DONE | Job 4 safety actions stay on **DEMO MODE**. **LIVE** shows model/devices, **START LIVE** / **STOP**, and Job 4 fallback. |
 | `qml/DemoPanel.qml` | Factual demo status panel | DONE | Demo Mode v2 state, scenario/source/duration/model, missing-category notice |
 | `qml/LivePanel.qml` | Live mode status panel | DONE | Devices (name/API/channels/rate), model, RTF, input overflows |
 | `qml/BenchmarkPanel.qml` | Offline benchmark / results screen | DONE | Read-only tables, SI-SDR bar chart, metric glossary, evaluation metadata |
@@ -902,6 +903,21 @@ Paired SI-SDR improvement **+2.24 dB**; **118 / 120** improved (2 degraded).
 | Preflight model | Validates registry + finetuned artifact files; does not load full torch weights |
 | Live hot-unplug | Still surfaces as `ERROR` + fallback; operator may need **RESET DEMO** or **Recover** |
 | Benchmark refresh | Preflight reads disk at click time; benchmark screen still loads at session init |
+
+### UI mode separation (2026-09-27)
+
+Presentation-only correction. `StreamingPipeline`, model inference, benchmark methodology, device enumeration, and audio processing were not changed.
+
+| Item | Behavior |
+|------|----------|
+| Demo | Scenario selector, **DEMO PREFLIGHT**, **RESET DEMO**, Play / Pause / Stop / Reset, A/B (**A Raw** / **B Enhanced**). Header **DRDO-ANC RECORDED DEMO**. |
+| Live | Model, input, output, refresh. **IDLE** shows **START LIVE** (`LiveAudioController.start` via existing `set_live_mode`). **LIVE** shows **STOP**. **STARTING** disables device/model changes and shows **STARTING**. **ERROR** keeps Job 4 **Recover** / **TRY AGAIN** / **USE RECORDED DEMO**. Header **DRDO-ANC LIVE MICROPHONE ·** `IDLE` / `STARTING` / `LIVE` / `ERROR` (also `STOPPING` while the existing controller is stopping). |
+| Benchmark | Header **DRDO-ANC BENCHMARK**. No demo transport and no live transport. |
+| Descriptions | One secondary line under the header for recorded comparison, live microphone, or offline SIH-26 evaluation. |
+| A/B | Recorded demo only. Live routing has no runtime raw/enhanced switch, so live does not show A/B controls or a second routing path. |
+| Rules | `gui/mode_presentation.py` is what QML visibility binds to through `GUIBridge`. |
+
+**Tests (2026-09-27):** `python -m pytest -q tests scripts/test_gui_mode_ui.py` — **12 passed**. `scripts/test_*.py` — **33/33 exit 0**. Offscreen `Main.qml` check covers Demo → Live (IDLE / STARTING / LIVE / ERROR) → Benchmark → Demo. `python -m pytest -q` from the repo root still stops during collection on vendored `external/DeepFilterNet` tests (missing `librosa` / `matplotlib`); those are not part of this GUI change.
 
 #### Remaining limitations (Demo Mode v2)
 
@@ -2244,6 +2260,16 @@ python scripts/test_network_audio.py
 
 ---
 
+### UI mode separation — demo vs live controls
+
+| | |
+|-|-|
+| **Objective** | Stop the live screen from showing recorded-demo transport, and label each mode in the header |
+| **Status** | DONE |
+| **Preserved** | `StreamingPipeline`, DeepFilterNet inference, benchmark methodology, device enumeration, Job 1–4 session/controller behavior |
+| **Key implementation** | `gui/mode_presentation.py`; `DemoControls.qml` live **START LIVE** / **STOP**; `Main.qml` mode banner and description |
+| **Validation** | `python scripts/test_gui_mode_ui.py`; `python -m pytest -q tests/test_gui_mode_presentation.py` |
+
 ### Step 17 — Network audio demo (Windows inference → Raspberry Pi playback)
 
 | | |
@@ -2285,7 +2311,7 @@ python scripts/run_live_enhancement.py --model DeepFilterNet3-Finetuned --input-
 
 ## LAST VERIFIED
 
-**2026-09-23** (Demo Mode v2, Jobs 2–4 Live / Benchmark / Preflight; full `scripts/test_*.py` regression)
+**2026-09-27** (GUI mode separation: demo transport vs live START/STOP; `scripts/test_gui_mode_ui.py` plus pytest `tests/test_gui_mode_presentation.py`. Audio, model, and benchmark backends unchanged.)
 
 ## CURRENT PROJECT STATE
 

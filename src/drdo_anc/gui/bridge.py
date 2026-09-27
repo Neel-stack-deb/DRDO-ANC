@@ -6,6 +6,14 @@ from dataclasses import dataclass, field
 import numpy as np
 from PySide6.QtCore import Property, QObject, QTimer, Signal, Slot
 
+from drdo_anc.gui.mode_presentation import (
+    activity_caption,
+    audio_selectors_enabled,
+    mode_banner,
+    mode_description,
+    stop_live_enabled,
+    visible_controls,
+)
 from drdo_anc.gui.telemetry import AudioTelemetry
 from drdo_anc.gui.waveform import WaveformProcessor
 
@@ -39,6 +47,7 @@ class GUIBridge(QObject):
   benchmarkStateChanged = Signal()
   devicesChanged = Signal()
   preflightStateChanged = Signal()
+  modePresentationChanged = Signal()
 
   def __init__(self, fps: int = 30) -> None:
     super().__init__()
@@ -342,6 +351,100 @@ class GUIBridge(QObject):
       return "LIVE MICROPHONE"
     return "RECORDED DEMO"
 
+  @Property(str, notify=modePresentationChanged)
+  def modeBanner(self) -> str:
+    return mode_banner(self._operation_mode, self._live_status)
+
+  @Property(str, notify=modePresentationChanged)
+  def modeDescription(self) -> str:
+    return mode_description(self._operation_mode)
+
+  @Property(str, notify=modePresentationChanged)
+  def activityCaption(self) -> str:
+    return activity_caption(
+      self._operation_mode,
+      demo_status=self._demo_status,
+      demo_scenario=self._demo_scenario,
+      ab_mode=self._ab_mode,
+      duration_s=self._demo_duration_s,
+      live_status=self._live_status,
+      overflows=self._live_input_overflows,
+    )
+
+  @Property(bool, notify=modePresentationChanged)
+  def showAudioSelectors(self) -> bool:
+    return "model" in self._visible_controls()
+
+  @Property(bool, notify=modePresentationChanged)
+  def audioSelectorsEnabled(self) -> bool:
+    return audio_selectors_enabled(
+      self._operation_mode,
+      self._live_status,
+      devices_locked=self._devices_locked,
+    )
+
+  @Property(bool, notify=modePresentationChanged)
+  def showDemoScenario(self) -> bool:
+    return "scenario" in self._visible_controls()
+
+  @Property(bool, notify=modePresentationChanged)
+  def showDemoSafety(self) -> bool:
+    return "demo_preflight" in self._visible_controls()
+
+  @Property(bool, notify=modePresentationChanged)
+  def showDemoTransport(self) -> bool:
+    return "play" in self._visible_controls()
+
+  @Property(bool, notify=modePresentationChanged)
+  def showDemoAb(self) -> bool:
+    return "ab_raw" in self._visible_controls()
+
+  @Property(bool, notify=modePresentationChanged)
+  def showLiveAb(self) -> bool:
+    return False
+
+  @Property(bool, notify=modePresentationChanged)
+  def showLiveTransport(self) -> bool:
+    return self._operation_mode == "live"
+
+  @Property(bool, notify=modePresentationChanged)
+  def showStartLive(self) -> bool:
+    return "start_live" in self._visible_controls()
+
+  @Property(bool, notify=modePresentationChanged)
+  def showStopLive(self) -> bool:
+    return "stop_live" in self._visible_controls()
+
+  @Property(bool, notify=modePresentationChanged)
+  def showLiveStarting(self) -> bool:
+    return "live_starting" in self._visible_controls()
+
+  @Property(bool, notify=modePresentationChanged)
+  def showRecoverLive(self) -> bool:
+    return "recover_live" in self._visible_controls()
+
+  @Property(bool, notify=modePresentationChanged)
+  def showLiveFallback(self) -> bool:
+    return "live_fallback" in self._visible_controls()
+
+  @Property(bool, notify=modePresentationChanged)
+  def startLiveEnabled(self) -> bool:
+    return "start_live" in self._visible_controls()
+
+  @Property(bool, notify=modePresentationChanged)
+  def stopLiveEnabled(self) -> bool:
+    return stop_live_enabled(self._operation_mode, self._live_status)
+
+  def _visible_controls(self) -> frozenset[str]:
+    return visible_controls(
+      self._operation_mode,
+      self._live_status,
+      live_fallback_offered=self._live_fallback_offered,
+    )
+
+  def _emit_mode_presentation(self) -> None:
+    self.modePresentationChanged.emit()
+
   @Property(str, notify=preflightStateChanged)
   def preflightStatus(self) -> str:
     return self._preflight_status
@@ -597,12 +700,14 @@ class GUIBridge(QObject):
     self._live_block_reason = live_block_reason
     self._show_all_devices = show_all_devices
     self.devicesChanged.emit()
+    self._emit_mode_presentation()
 
   def set_devices_locked(self, locked: bool) -> None:
     if self._devices_locked == locked:
       return
     self._devices_locked = locked
     self.devicesChanged.emit()
+    self._emit_mode_presentation()
 
   def set_demo_assets(
     self,
@@ -625,6 +730,7 @@ class GUIBridge(QObject):
       return
     self._demo_status = status
     self.demoStateChanged.emit()
+    self._emit_mode_presentation()
 
   def set_demo_scenario_details(
     self,
@@ -642,6 +748,7 @@ class GUIBridge(QObject):
     self._latest_telemetry.sample_rate = int(sample_rate)
     self.demoStateChanged.emit()
     self.telemetryUpdated.emit()
+    self._emit_mode_presentation()
 
   def set_missing_demo_categories(self, messages: list[str]) -> None:
     self._missing_demo_categories = list(messages)
@@ -653,6 +760,7 @@ class GUIBridge(QObject):
     self._live_status = status
     self.liveStateChanged.emit()
     self.telemetryUpdated.emit()
+    self._emit_mode_presentation()
 
   def set_live_device_summaries(
     self,
@@ -669,6 +777,7 @@ class GUIBridge(QObject):
       return
     self._live_input_overflows = int(count)
     self.liveStateChanged.emit()
+    self._emit_mode_presentation()
 
   def set_preflight_report(
     self,
@@ -694,6 +803,7 @@ class GUIBridge(QObject):
     self._live_fallback_kind = kind
     self.set_error(message)
     self.liveStateChanged.emit()
+    self._emit_mode_presentation()
 
   def clear_live_fallback(self) -> None:
     if not self._live_fallback_offered and not self._live_fallback_message:
@@ -702,6 +812,7 @@ class GUIBridge(QObject):
     self._live_fallback_message = ""
     self._live_fallback_kind = ""
     self.liveStateChanged.emit()
+    self._emit_mode_presentation()
 
   def clear_demo_reference_metrics(self) -> None:
     self._demo_metrics_available = False
@@ -729,6 +840,7 @@ class GUIBridge(QObject):
     self._operation_mode = mode
     self.demoStateChanged.emit()
     self.benchmarkStateChanged.emit()
+    self._emit_mode_presentation()
 
   def set_benchmark_presentation(
     self,
@@ -761,6 +873,7 @@ class GUIBridge(QObject):
   def set_demo_scenario(self, label: str) -> None:
     self._demo_scenario = label
     self.demoStateChanged.emit()
+    self._emit_mode_presentation()
 
   def set_selected_scenario_index(self, index: int) -> None:
     self._selected_scenario_index = index
@@ -773,6 +886,7 @@ class GUIBridge(QObject):
   def set_ab_mode(self, mode: str) -> None:
     self._ab_mode = mode
     self.demoStateChanged.emit()
+    self._emit_mode_presentation()
 
   def set_pipeline_stage(self, stage: str) -> None:
     self._pipeline_stage = stage
@@ -810,6 +924,11 @@ class GUIBridge(QObject):
   def play(self) -> None:
     if self._session is not None:
       self._session.play()
+
+  @Slot()
+  def startLive(self) -> None:
+    if self._session is not None and self._operation_mode == "live":
+      self._session.set_live_mode()
 
   @Slot()
   def pause(self) -> None:

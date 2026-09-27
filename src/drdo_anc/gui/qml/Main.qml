@@ -10,11 +10,26 @@ Window {
     visible: true
     title: qsTr("DRDO-ANC Telemetry Console")
 
-    Shortcut { sequence: "Space"; onActivated: { if (guiBridge.playbackState === "playing") guiBridge.pause(); else guiBridge.play() } }
-    Shortcut { sequence: "A"; onActivated: guiBridge.selectAbRaw() }
-    Shortcut { sequence: "B"; onActivated: guiBridge.selectAbEnhanced() }
-    Shortcut { sequence: "1"; onActivated: guiBridge.selectScenario(0) }
-    Shortcut { sequence: "2"; onActivated: guiBridge.selectScenario(1) }
+    Shortcut {
+        sequence: "Space"
+        onActivated: {
+            if (guiBridge.operationMode === "demo") {
+                if (guiBridge.playbackState === "playing")
+                    guiBridge.pause()
+                else
+                    guiBridge.play()
+            } else if (guiBridge.operationMode === "live") {
+                if (guiBridge.liveStatus === "LIVE" || guiBridge.liveStatus === "STARTING")
+                    guiBridge.stopLive()
+                else if (guiBridge.liveStatus === "IDLE")
+                    guiBridge.startLive()
+            }
+        }
+    }
+    Shortcut { sequence: "A"; onActivated: { if (guiBridge.operationMode === "demo") guiBridge.selectAbRaw() } }
+    Shortcut { sequence: "B"; onActivated: { if (guiBridge.operationMode === "demo") guiBridge.selectAbEnhanced() } }
+    Shortcut { sequence: "1"; onActivated: { if (guiBridge.operationMode === "demo") guiBridge.selectScenario(0) } }
+    Shortcut { sequence: "2"; onActivated: { if (guiBridge.operationMode === "demo") guiBridge.selectScenario(1) } }
 
     // Deep Premium Dark Palette
     property color black: "#05070A"
@@ -50,18 +65,10 @@ Window {
             }
             
             Text {
-                text: guiBridge.demoSourceLabel
+                objectName: "modeBanner"
+                text: guiBridge.modeBanner
                 color: cyan
                 font.pixelSize: 32
-                font.bold: true
-                Layout.alignment: Qt.AlignLeft
-            }
-
-            Text {
-                visible: guiBridge.operationMode === "live"
-                text: "· " + guiBridge.liveStatus
-                color: lightGrey
-                font.pixelSize: 28
                 font.bold: true
                 Layout.alignment: Qt.AlignLeft
             }
@@ -79,6 +86,15 @@ Window {
         }
         
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: lightGrey }
+
+        Text {
+            objectName: "modeDescription"
+            Layout.fillWidth: true
+            text: guiBridge.modeDescription
+            color: "#8B95A7"
+            font.pixelSize: 12
+            wrapMode: Text.WordWrap
+        }
 
         Text {
             Layout.fillWidth: true
@@ -109,17 +125,14 @@ Window {
             visible: !guiBridge.isBenchmarkMode
 
             Text {
+                objectName: "activityCaption"
                 Layout.fillWidth: true
+                visible: guiBridge.activityCaption.length > 0
                 color: cyan
                 font.pixelSize: 14
                 font.bold: true
                 elide: Text.ElideRight
-                text: guiBridge.operationMode === "demo"
-                    ? (guiBridge.demoStatus + "   ·   " + guiBridge.demoScenario
-                       + "   ·   " + (guiBridge.abMode === "enhanced" ? "B Enhanced" : "A Raw")
-                       + "   ·   " + guiBridge.demoDurationSeconds.toFixed(1) + " s")
-                    : ("LIVE   ·   " + guiBridge.liveStatus
-                       + "   ·   overflows " + guiBridge.liveInputOverflows)
+                text: guiBridge.activityCaption
             }
 
             ColumnLayout {

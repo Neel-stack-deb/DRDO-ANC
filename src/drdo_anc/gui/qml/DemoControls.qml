@@ -10,7 +10,6 @@ Item {
     property color dim: "#666666"
     property color buttonBg: "#151A22"
     property color buttonActive: "#00E5FF"
-    readonly property bool showAudioControls: !guiBridge.isBenchmarkMode
 
     ColumnLayout {
         id: column
@@ -52,72 +51,81 @@ Item {
         }
 
         RowLayout {
+            objectName: "modelRow"
             Layout.fillWidth: true
             spacing: 8
-            visible: root.showAudioControls
+            visible: guiBridge.showAudioSelectors
 
             Text { text: "MODEL"; color: dim; font.pixelSize: 10; font.bold: true }
             DeviceCombo {
                 id: modelBox
+                objectName: "modelCombo"
                 Layout.preferredWidth: 280
                 model: guiBridge.modelLabels
                 currentIndex: guiBridge.selectedModelIndex
-                enabled: !guiBridge.devicesLocked
+                enabled: guiBridge.audioSelectorsEnabled
                 onActivated: guiBridge.selectModel(index)
             }
 
             Item { Layout.fillWidth: true }
             CheckBox {
+                objectName: "showAllDevicesBox"
                 text: "Show all devices"
                 checked: guiBridge.showAllDevices
-                enabled: !guiBridge.devicesLocked
+                enabled: guiBridge.audioSelectorsEnabled
                 onToggled: guiBridge.setShowAllDevices(checked)
                 palette.windowText: dim
                 palette.button: buttonBg
                 palette.highlight: cyan
             }
             DemoButton {
+                objectName: "refreshDevicesButton"
                 label: "Refresh devices"
-                enabled: !guiBridge.devicesLocked
+                enabled: guiBridge.audioSelectorsEnabled
                 onActivated: guiBridge.refreshDevices()
             }
         }
 
         RowLayout {
+            objectName: "inputDeviceRow"
             Layout.fillWidth: true
             spacing: 8
-            visible: root.showAudioControls
+            visible: guiBridge.showAudioSelectors
 
             Text { text: "INPUT DEVICE"; color: dim; font.pixelSize: 10; font.bold: true }
             DeviceCombo {
                 id: inputBox
+                objectName: "inputDeviceCombo"
                 Layout.fillWidth: true
                 model: guiBridge.inputDeviceLabels
                 currentIndex: guiBridge.selectedInputDeviceIndex
-                enabled: !guiBridge.devicesLocked
+                enabled: guiBridge.audioSelectorsEnabled
                 onActivated: guiBridge.selectInputDevice(index)
             }
         }
 
         RowLayout {
+            objectName: "outputDeviceRow"
             Layout.fillWidth: true
             spacing: 8
-            visible: root.showAudioControls
+            visible: guiBridge.showAudioSelectors
 
             Text { text: "OUTPUT DEVICE"; color: dim; font.pixelSize: 10; font.bold: true }
             DeviceCombo {
                 id: outputBox
+                objectName: "outputDeviceCombo"
                 Layout.fillWidth: true
                 model: guiBridge.outputDeviceLabels
                 currentIndex: guiBridge.selectedOutputDeviceIndex
-                enabled: !guiBridge.devicesLocked
+                enabled: guiBridge.audioSelectorsEnabled
                 onActivated: guiBridge.selectOutputDevice(index)
             }
         }
 
         Text {
+            objectName: "liveBlockReason"
             Layout.fillWidth: true
-            visible: root.showAudioControls && !guiBridge.liveCanStart && guiBridge.liveBlockReason.length > 0
+            visible: guiBridge.operationMode === "live" && guiBridge.liveBlockReason.length > 0
             text: guiBridge.liveBlockReason
             color: "#FF5577"
             font.pixelSize: 11
@@ -125,9 +133,10 @@ Item {
         }
 
         RowLayout {
+            objectName: "scenarioRow"
             Layout.fillWidth: true
             spacing: 8
-            visible: guiBridge.operationMode === "demo"
+            visible: guiBridge.showDemoScenario
 
             Text { text: "SCENARIO"; color: dim; font.pixelSize: 10; font.bold: true }
 
@@ -142,16 +151,19 @@ Item {
         }
 
         RowLayout {
+            objectName: "demoSafetyRow"
             Layout.fillWidth: true
             spacing: 8
-            visible: root.showAudioControls
+            visible: guiBridge.showDemoSafety
 
             Text { text: "SIH SAFETY"; color: dim; font.pixelSize: 10; font.bold: true }
             DemoButton {
+                objectName: "demoPreflightButton"
                 label: "DEMO PREFLIGHT"
                 onActivated: guiBridge.runDemoPreflight()
             }
             DemoButton {
+                objectName: "resetDemoButton"
                 label: "RESET DEMO"
                 onActivated: guiBridge.emergencyResetDemo()
             }
@@ -167,8 +179,9 @@ Item {
         }
 
         Text {
+            objectName: "preflightFailureText"
             Layout.fillWidth: true
-            visible: guiBridge.preflightHasRun && guiBridge.preflightStatus === "FAILED"
+            visible: guiBridge.showDemoSafety && guiBridge.preflightHasRun && guiBridge.preflightStatus === "FAILED"
             text: guiBridge.preflightCheckLines.join("\n")
             color: "#FF5577"
             font.pixelSize: 9
@@ -179,9 +192,10 @@ Item {
         }
 
         RowLayout {
+            objectName: "liveFallbackRow"
             Layout.fillWidth: true
             spacing: 8
-            visible: root.showAudioControls && guiBridge.liveFallbackOffered
+            visible: guiBridge.showLiveFallback
 
             Text {
                 Layout.fillWidth: true
@@ -191,65 +205,108 @@ Item {
                 wrapMode: Text.WordWrap
             }
             DemoButton {
+                objectName: "tryLiveAgainButton"
                 label: "TRY AGAIN"
                 onActivated: guiBridge.tryLiveAgain()
             }
             DemoButton {
+                objectName: "useRecordedDemoButton"
                 label: "USE RECORDED DEMO"
                 onActivated: guiBridge.useRecordedDemo()
             }
         }
 
         RowLayout {
+            objectName: "demoTransportRow"
             Layout.fillWidth: true
             spacing: 8
-            visible: root.showAudioControls
+            visible: guiBridge.showDemoTransport
 
             Text { text: "TRANSPORT"; color: dim; font.pixelSize: 10; font.bold: true }
-            DemoButton { label: "Play"; onActivated: guiBridge.play() }
-            DemoButton { label: "Pause"; onActivated: guiBridge.pause() }
             DemoButton {
+                objectName: "playButton"
+                label: "Play"
+                onActivated: guiBridge.play()
+            }
+            DemoButton {
+                objectName: "pauseButton"
+                label: "Pause"
+                onActivated: guiBridge.pause()
+            }
+            DemoButton {
+                objectName: "stopButton"
                 label: "Stop"
                 onActivated: guiBridge.stop()
             }
             DemoButton {
-                visible: guiBridge.operationMode === "demo"
+                objectName: "resetButton"
                 label: "Reset"
                 onActivated: guiBridge.resetDemo()
-            }
-            DemoButton {
-                visible: guiBridge.operationMode === "live" && guiBridge.liveStatus === "ERROR"
-                label: "Recover"
-                onActivated: guiBridge.recoverLive()
             }
 
             Item { Layout.fillWidth: true }
 
             Text {
-                visible: guiBridge.operationMode === "demo"
                 text: "A/B"
                 color: dim
                 font.pixelSize: 10
                 font.bold: true
             }
             DemoButton {
-                visible: guiBridge.operationMode === "demo"
-                label: "A Raw"
+                objectName: "abRawButton"
+                label: guiBridge.abMode === "raw" ? "● A Raw" : "A Raw"
                 active: guiBridge.abMode === "raw"
                 onActivated: guiBridge.selectAbRaw()
             }
             DemoButton {
-                visible: guiBridge.operationMode === "demo"
-                label: "B Enhanced"
+                objectName: "abEnhancedButton"
+                label: guiBridge.abMode === "enhanced" ? "● B Enhanced" : "B Enhanced"
                 active: guiBridge.abMode === "enhanced"
                 onActivated: guiBridge.selectAbEnhanced()
+            }
+        }
+
+        RowLayout {
+            objectName: "liveTransportRow"
+            Layout.fillWidth: true
+            spacing: 8
+            visible: guiBridge.showLiveTransport
+
+            Text { text: "TRANSPORT"; color: dim; font.pixelSize: 10; font.bold: true }
+            DemoButton {
+                objectName: "startLiveButton"
+                visible: guiBridge.showStartLive
+                enabled: guiBridge.startLiveEnabled
+                label: "START LIVE"
+                onActivated: guiBridge.startLive()
+            }
+            Text {
+                objectName: "liveStartingLabel"
+                visible: guiBridge.showLiveStarting
+                text: "STARTING"
+                color: cyan
+                font.pixelSize: 12
+                font.bold: true
+            }
+            DemoButton {
+                objectName: "stopLiveButton"
+                visible: guiBridge.showStopLive
+                enabled: guiBridge.stopLiveEnabled
+                label: "STOP"
+                onActivated: guiBridge.stopLive()
+            }
+            DemoButton {
+                objectName: "recoverLiveButton"
+                visible: guiBridge.showRecoverLive
+                label: "Recover"
+                onActivated: guiBridge.recoverLive()
             }
         }
 
         PipelineChain {
             Layout.fillWidth: true
             Layout.preferredHeight: 24
-            visible: root.showAudioControls
+            visible: guiBridge.showAudioSelectors
         }
     }
 }
