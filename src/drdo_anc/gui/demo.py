@@ -36,6 +36,7 @@ from drdo_anc.gui.demo_state import (
     DEMO_STATUS_STOPPED,
     playing_status_for_ab_mode,
 )
+from drdo_anc.gui.telemetry import HOLD_DEMO
 from drdo_anc.enhancement.finetuned import FINETUNED_MODEL_NAME
 
 DEFAULT_CHUNK_SIZE = 1024
@@ -64,7 +65,21 @@ def _default_open_output(
         sample_rate,
         output_device=output_device,
         blocksize=blocksize,
+        latency="low",
     )
+
+
+def _friendly_output_error(exc: BaseException) -> str:
+    text = str(exc).strip()
+    if "Insufficient memory" in text or "-9992" in text:
+        return (
+            "Headphone output is busy or unavailable. "
+            "Click RESET DEMO, stop Live mode, close other apps using the device, "
+            "then try Play again."
+        )
+    if "Error opening" in text or "Invalid device" in text:
+        return "Selected output device is unavailable. Refresh devices and try again."
+    return f"Demo startup failed: {text}"
 
 # Deterministic impulse positions used only by unit tests.
 _IMPULSE_OFFSETS = (
@@ -422,6 +437,21 @@ class DemoAudioController:
     def _current_scenario(self) -> DemoScenario:
         return get_scenario_by_index(self._catalog, self._scenario_index)
 
+    def _begin_telemetry_session(self) -> None:
+        begin = getattr(self._bridge, "begin_telemetry_session", None)
+        if begin is not None:
+            begin()
+
+    def _end_telemetry_session(self) -> None:
+        end = getattr(self._bridge, "end_telemetry_session", None)
+        if end is not None:
+            end(HOLD_DEMO)
+
+    def _clear_telemetry(self) -> None:
+        clear = getattr(self._bridge, "clear_mode_telemetry", None)
+        if clear is not None:
+            clear()
+
     def _set_demo_status(self, status: str) -> None:
         setter = getattr(self._bridge, "set_demo_status", None)
         if setter is not None:
@@ -446,6 +476,31 @@ class DemoAudioController:
             return
         self._set_demo_status(playing_status_for_ab_mode(self._ab_mode))
 
+    def _close_playback_resources(self) -> None:
+        """Release PortAudio playback streams (safe if partially constructed)."""
+
+        if self._selectable_output is not None:
+            try:
+                self._selectable_output.close()
+            except Exception:
+                traceback.print_exc()
+
+        if self._sink is not None:
+            try:
+                self._sink.close()
+            except Exception:
+                traceback.print_exc()
+        elif self._hardware_sink is not None:
+            try:
+                self._hardware_sink.close()
+            except Exception:
+                traceback.print_exc()
+
+        self._playback_queue = None
+        self._hardware_sink = None
+        self._sink = None
+        self._selectable_output = None
+
     def _safe_teardown(self, *, join_thread: bool = True) -> None:
         if self._pipeline is not None:
             try:
@@ -467,11 +522,7 @@ class DemoAudioController:
         ):
             self._thread.join(timeout=5.0)
 
-        if self._sink is not None:
-            try:
-                self._sink.close()
-            except Exception:
-                traceback.print_exc()
+        self._close_playback_resources()
 
         if self._enhancer is not None:
             try:
@@ -481,10 +532,6 @@ class DemoAudioController:
 
         self._pipeline = None
         self._replay_input = None
-        self._selectable_output = None
-        self._playback_queue = None
-        self._hardware_sink = None
-        self._sink = None
         self._reference_enhanced_audio = None
         self._clean_reference_audio = None
         self._thread = None
@@ -503,6 +550,8 @@ class DemoAudioController:
         return self._enhancer
 
     def _build_pipeline(self) -> None:
+        self._close_playback_resources()
+
         enhancer = self._ensure_enhancer()
         scenario = self._current_scenario()
         audio, sample_rate = self._load_current_audio()
@@ -518,24 +567,6 @@ class DemoAudioController:
             sample_rate,
             realtime=not self._physical_output,
         )
-
-        if self._physical_output:
-            self._hardware_sink = self._open_output(
-                sample_rate,
-                output_device=self._output_device,
-                blocksize=self._chunk_size,
-            )
-            self._playback_queue = ABQueuedPlaybackOutput(
-                self._hardware_sink,
-                sample_rate=sample_rate,
-                chunk_samples=self._chunk_size,
-                max_chunks=DEFAULT_PLAYBACK_QUEUE_CHUNKS,
-            )
-            self._sink = self._playback_queue
-        else:
-            self._hardware_sink = None
-            self._playback_queue = None
-            self._sink = FakeAudioOutput(sample_rate)
 
         reference_audio = None
         reference_for_playback = scenario.enhanced_playback == "reference"
@@ -569,6 +600,29 @@ class DemoAudioController:
             self._clean_reference_audio = None
 
         self._reference_enhanced_audio = reference_audio
+
+        if self._physical_output:
+            try:
+                self._hardware_sink = self._open_output(
+                    sample_rate,
+                    output_device=self._output_device,
+                    blocksize=self._chunk_size,
+                )
+                self._playback_queue = ABQueuedPlaybackOutput(
+                    self._hardware_sink,
+                    sample_rate=sample_rate,
+                    chunk_samples=self._chunk_size,
+                    max_chunks=DEFAULT_PLAYBACK_QUEUE_CHUNKS,
+                )
+                self._sink = self._playback_queue
+            except Exception:
+                self._close_playback_resources()
+                raise
+        else:
+            self._hardware_sink = None
+            self._playback_queue = None
+            self._sink = FakeAudioOutput(sample_rate)
+
         self._selectable_output = DemoPipelineOutput(
             self._sink,
             self._replay_input,
@@ -653,11 +707,13 @@ class DemoAudioController:
 
             self._set_demo_status(DEMO_STATUS_LOADING)
             self._bridge.clear_error()
+            self._begin_telemetry_session()
 
             try:
                 self._build_pipeline()
             except DemoManifestError as exc:
                 self._safe_teardown()
+                self._end_telemetry_session()
                 self._bridge.set_error(f"Demo asset invalid: {exc}")
                 self._bridge.set_audio_status("Error")
                 self._set_demo_status(DEMO_STATUS_ERROR)
@@ -665,7 +721,8 @@ class DemoAudioController:
                 return
             except Exception as exc:
                 self._safe_teardown()
-                self._bridge.set_error(f"Demo startup failed: {exc}")
+                self._end_telemetry_session()
+                self._bridge.set_error(_friendly_output_error(exc))
                 self._bridge.set_audio_status("Error")
                 self._set_demo_status(DEMO_STATUS_ERROR)
                 traceback.print_exc()
@@ -701,6 +758,7 @@ class DemoAudioController:
                     self._bridge.set_playback_state("stopped")
                     self._bridge.set_audio_status("Stopped")
                     self._bridge.set_pipeline_stage("input")
+                    self._end_telemetry_session()
                     if errored:
                         self._set_demo_status(DEMO_STATUS_ERROR)
                     else:
@@ -732,6 +790,7 @@ class DemoAudioController:
             self._bridge.set_audio_status("Stopped")
             self._bridge.set_pipeline_stage("input")
             self._set_demo_status(DEMO_STATUS_STOPPED)
+            self._end_telemetry_session()
 
     def reset(self) -> None:
         """Stop playback, release devices, and return to a clean idle state."""
@@ -744,6 +803,7 @@ class DemoAudioController:
             self._bridge.clear_error()
             self._publish_scenario_metadata(self._current_scenario())
             self._set_demo_status(DEMO_STATUS_IDLE)
+            self._clear_telemetry()
 
     def shutdown(self) -> None:
         with self._session_lock:

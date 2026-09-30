@@ -129,60 +129,149 @@ Item {
         }
         
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: lightGrey }
-        
-        // --- Data Grids with Sparklines ---
+
+        Text {
+            objectName: "telemetryNote"
+            visible: guiBridge.telemetryNote.length > 0
+            text: guiBridge.telemetryNote
+            color: "#8B95A7"
+            font.pixelSize: 11
+        }
+
         GridLayout {
             Layout.fillWidth: true
             columns: 4
             columnSpacing: 24
-            
-            // Processing Latency
+
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 2
-                Text { text: "PROCESSING LATENCY"; color: white; font.pixelSize: 14 }
+                Text {
+                    objectName: "processingLatencyLabel"
+                    text: guiBridge.processingLatencyLabel
+                    color: white
+                    font.pixelSize: 13
+                }
+                Text {
+                    text: guiBridge.processingLatencyHint
+                    color: "#8B95A7"
+                    font.pixelSize: 10
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
                 RowLayout {
-                    Text { text: guiBridge.processingTimeMs.toFixed(2); color: white; font.pixelSize: 42; font.bold: true }
-                    Text { text: "ms"; color: white; font.pixelSize: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 6 }
+                    Text {
+                        objectName: "processingValue"
+                        text: guiBridge.processingValueText
+                        color: white
+                        font.pixelSize: 42
+                        font.bold: true
+                    }
+                    Text {
+                        visible: guiBridge.processingMeasured
+                        text: "ms"
+                        color: white
+                        font.pixelSize: 20
+                        Layout.alignment: Qt.AlignBottom
+                        Layout.bottomMargin: 6
+                    }
                 }
                 Text { text: "HISTORY SPARKLINE"; color: cyan; font.pixelSize: 8; font.bold: true }
                 Sparkline { id: sparkProc; Layout.fillWidth: true; Layout.preferredHeight: 40; yMin: 0; yMax: 10 }
                 Connections { target: guiBridge; function onHistoryUpdated() { sparkProc.updateData(guiBridge.procTimeHistory); } }
             }
-            
-            // Buffer Saturation
+
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 2
-                Text { text: "BUFFER SATURATION"; color: white; font.pixelSize: 14 }
+                Text {
+                    objectName: "bufferFillLabel"
+                    text: guiBridge.bufferFillLabel
+                    color: white
+                    font.pixelSize: 13
+                }
+                Text {
+                    text: guiBridge.bufferFillHint
+                    color: "#8B95A7"
+                    font.pixelSize: 10
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
                 RowLayout {
-                    Text { text: guiBridge.bufferFillPercent.toFixed(2); color: white; font.pixelSize: 42; font.bold: true }
-                    Text { text: "%"; color: white; font.pixelSize: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 6 }
+                    Text {
+                        objectName: "bufferValue"
+                        text: guiBridge.bufferValueText
+                        color: white
+                        font.pixelSize: 42
+                        font.bold: true
+                    }
                 }
                 Text { text: "HISTORY SPARKLINE"; color: cyan; font.pixelSize: 8; font.bold: true }
                 Sparkline { id: sparkBuf; Layout.fillWidth: true; Layout.preferredHeight: 40; yMin: 0; yMax: 100 }
                 Connections { target: guiBridge; function onHistoryUpdated() { sparkBuf.updateData(guiBridge.bufferFillHistory); } }
             }
-            
-            // Dropped Packets
+
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 2
-                Text { text: "DROPPED PACKETS"; color: white; font.pixelSize: 14 }
-                Text { text: guiBridge.droppedFrames; color: white; font.pixelSize: 42; font.bold: true }
+                Text {
+                    objectName: "overflowLabel"
+                    text: guiBridge.overflowLabel
+                    color: white
+                    font.pixelSize: 13
+                }
+                Text {
+                    objectName: "overflowHint"
+                    text: guiBridge.overflowHint
+                    color: "#8B95A7"
+                    font.pixelSize: 10
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+                Text {
+                    objectName: "overflowValue"
+                    text: guiBridge.overflowValueText
+                    color: white
+                    font.pixelSize: 42
+                    font.bold: true
+                }
                 Text { text: "HISTORY SPARKLINE"; color: cyan; font.pixelSize: 8; font.bold: true }
                 Sparkline { id: sparkDrop; Layout.fillWidth: true; Layout.preferredHeight: 40; yMin: 0; yMax: 10 }
                 Connections { target: guiBridge; function onHistoryUpdated() { sparkDrop.updateData(guiBridge.droppedHistory); } }
             }
-            
-            // Real-Time Factor
+
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 2
-                Text { text: "REAL-TIME FACTOR"; color: white; font.pixelSize: 14 }
+                Text {
+                    objectName: "rtfLabel"
+                    text: guiBridge.rtfLabel
+                    color: white
+                    font.pixelSize: 13
+                }
+                Text {
+                    text: guiBridge.rtfHint
+                    color: "#8B95A7"
+                    font.pixelSize: 10
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
                 RowLayout {
-                    Text { text: guiBridge.realtimeFactor.toFixed(2); color: white; font.pixelSize: 42; font.bold: true }
-                    Text { text: "x"; color: white; font.pixelSize: 20; anchors.bottom: parent.bottom; anchors.bottomMargin: 6 }
+                    Text {
+                        objectName: "rtfValue"
+                        text: guiBridge.rtfValueText
+                        color: white
+                        font.pixelSize: 42
+                        font.bold: true
+                    }
+                    Text {
+                        visible: guiBridge.rtfMeasured
+                        text: "x"
+                        color: white
+                        font.pixelSize: 20
+                        Layout.alignment: Qt.AlignBottom
+                        Layout.bottomMargin: 6
+                    }
                 }
                 Text { text: "HISTORY SPARKLINE"; color: cyan; font.pixelSize: 8; font.bold: true }
                 Sparkline { id: sparkRtf; Layout.fillWidth: true; Layout.preferredHeight: 40; yMin: 0; yMax: 2 }

@@ -305,8 +305,9 @@ class FineTunedDeepFilterNetEnhancer(Enhancer):
             self._stream_buffer.clear()
 
     def sample_rate(self) -> int:
+        # Boundary rate is fixed at 48 kHz before load() for I/O setup.
         if self._sample_rate is None:
-            raise RuntimeError("Enhancer is not loaded. Call load() first.")
+            return 48_000
         return self._sample_rate
 
     def name(self) -> str:

@@ -11,6 +11,8 @@ from typing import Protocol
 
 from drdo_anc.audio.live import StreamingPipeline, close_sounddevice_io
 from drdo_anc.audio.live.interfaces import AudioInput, AudioOutput
+from drdo_anc.gui.demo import SelectableAudioOutput
+from drdo_anc.gui.telemetry import HOLD_LIVE
 from drdo_anc.gui.live_state import (
     LIVE_STATUS_ERROR,
     LIVE_STATUS_IDLE,
@@ -67,6 +69,7 @@ class LiveAudioController:
         self._pipeline: StreamingPipeline | None = None
         self._audio_input: AudioInput | None = None
         self._audio_output: AudioOutput | None = None
+        self._selectable_output: SelectableAudioOutput | None = None
         self._audio_thread: threading.Thread | None = None
         self._lifecycle_lock = threading.RLock()
         self._state = LIVE_STATUS_IDLE
@@ -75,6 +78,7 @@ class LiveAudioController:
         self._output_device: int | str | None = self._parse_device(args.output_device)
         self._model_name = str(args.model)
         self._on_finished: Callable[[], None] | None = None
+        self._output_mode = "raw"
 
     def set_finished_callback(self, callback: Callable[[], None] | None) -> None:
         self._on_finished = callback
@@ -117,6 +121,23 @@ class LiveAudioController:
             if self.is_started:
                 return
             self._model_name = model_name
+
+    @property
+    def output_mode(self) -> str:
+        return self._output_mode
+
+    def set_output_mode(self, mode: str) -> None:
+        if mode not in {"raw", "enhanced"}:
+            raise ValueError("mode must be 'raw' or 'enhanced'.")
+        with self._lifecycle_lock:
+            self._output_mode = mode
+            if self._selectable_output is not None:
+                self._selectable_output.set_mode(mode)
+
+    def _end_telemetry_session(self) -> None:
+        end = getattr(self._bridge, "end_telemetry_session", None)
+        if end is not None:
+            end(HOLD_LIVE)
 
     def _set_live_status(self, status: str) -> None:
         self._state = status
@@ -166,11 +187,16 @@ class LiveAudioController:
                 return
 
             self._set_live_status(LIVE_STATUS_STARTING)
+            self.set_output_mode("raw")
             self._bridge.clear_error()
+            begin = getattr(self._bridge, "begin_telemetry_session", None)
+            if begin is not None:
+                begin()
 
             try:
                 self._start_audio()
             except Exception as exc:
+                self._end_telemetry_session()
                 self._release_resources(join_thread=True)
                 message = self._user_message(exc)
                 self._bridge.set_error(message)
@@ -195,6 +221,7 @@ class LiveAudioController:
 
             self._set_live_status(LIVE_STATUS_IDLE)
             self._bridge.set_pipeline_stage("input")
+            self._end_telemetry_session()
             if previous != LIVE_STATUS_ERROR:
                 self._bridge.clear_error()
 
@@ -206,6 +233,9 @@ class LiveAudioController:
             self._bridge.clear_error()
             self._set_live_status(LIVE_STATUS_IDLE)
             self._bridge.set_pipeline_stage("input")
+            clear = getattr(self._bridge, "clear_mode_telemetry", None)
+            if clear is not None:
+                clear()
 
     @staticmethod
     def _user_message(exc: BaseException) -> str:
@@ -247,6 +277,9 @@ class LiveAudioController:
             blocksize=args.chunk_size,
         )
 
+        selectable_output = SelectableAudioOutput(audio_output)
+        selectable_output.set_mode(self._output_mode)
+
         self._bridge.set_stream_metadata(
             model_name=model_name,
             sample_rate=sample_rate,
@@ -264,7 +297,7 @@ class LiveAudioController:
 
         pipeline = StreamingPipeline(
             audio_input,
-            audio_output,
+            selectable_output,
             enhancer,
             read_chunk_size=args.chunk_size,
             passthrough=args.passthrough,
@@ -273,6 +306,7 @@ class LiveAudioController:
 
         self._audio_input = audio_input
         self._audio_output = audio_output
+        self._selectable_output = selectable_output
         self._pipeline = pipeline
 
         def run_audio_thread() -> None:
@@ -294,6 +328,7 @@ class LiveAudioController:
                     self._pipeline = None
                     self._audio_input = None
                     self._audio_output = None
+                    self._selectable_output = None
                     self._audio_thread = None
                     if errored:
                         self._state = LIVE_STATUS_ERROR

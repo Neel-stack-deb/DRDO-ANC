@@ -25,7 +25,7 @@ Item {
             var ctx = getContext("2d");
             ctx.clearRect(0, 0, width, height);
             
-            if (!historyData || historyData.length === 0) return;
+            if (!historyData || historyData.length < 2) return;
             
             var w = width;
             var h = height;

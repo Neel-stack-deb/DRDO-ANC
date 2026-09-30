@@ -10,11 +10,26 @@ Window {
     visible: true
     title: qsTr("DRDO-ANC Telemetry Console")
 
-    Shortcut { sequence: "Space"; onActivated: { if (guiBridge.playbackState === "playing") guiBridge.pause(); else guiBridge.play() } }
-    Shortcut { sequence: "A"; onActivated: guiBridge.selectAbRaw() }
-    Shortcut { sequence: "B"; onActivated: guiBridge.selectAbEnhanced() }
-    Shortcut { sequence: "1"; onActivated: guiBridge.selectScenario(0) }
-    Shortcut { sequence: "2"; onActivated: guiBridge.selectScenario(1) }
+    Shortcut {
+        sequence: "Space"
+        onActivated: {
+            if (guiBridge.operationMode === "demo") {
+                if (guiBridge.playbackState === "playing")
+                    guiBridge.pause()
+                else
+                    guiBridge.play()
+            } else if (guiBridge.operationMode === "live") {
+                if (guiBridge.liveStatus === "LIVE" || guiBridge.liveStatus === "STARTING")
+                    guiBridge.stopLive()
+                else if (guiBridge.liveStatus === "IDLE")
+                    guiBridge.startLive()
+            }
+        }
+    }
+    Shortcut { sequence: "A"; onActivated: { if (guiBridge.operationMode === "demo") guiBridge.selectAbRaw() } }
+    Shortcut { sequence: "B"; onActivated: { if (guiBridge.operationMode === "demo") guiBridge.selectAbEnhanced() } }
+    Shortcut { sequence: "1"; onActivated: { if (guiBridge.operationMode === "demo") guiBridge.selectScenario(0) } }
+    Shortcut { sequence: "2"; onActivated: { if (guiBridge.operationMode === "demo") guiBridge.selectScenario(1) } }
 
     // Deep Premium Dark Palette
     property color black: "#05070A"
@@ -34,7 +49,7 @@ Window {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 16
-        spacing: 16
+        spacing: 12
         
         // Header
         RowLayout {
@@ -43,25 +58,17 @@ Window {
             Text {
                 text: "DRDO-ANC"
                 color: white
-                font.pixelSize: 48
+                font.pixelSize: 30
                 font.bold: true
                 font.letterSpacing: -1
                 Layout.alignment: Qt.AlignLeft
             }
             
             Text {
-                text: guiBridge.demoSourceLabel
+                objectName: "modeBanner"
+                text: guiBridge.modeBanner
                 color: cyan
-                font.pixelSize: 48
-                font.bold: true
-                Layout.alignment: Qt.AlignLeft
-            }
-
-            Text {
-                visible: guiBridge.operationMode === "live"
-                text: "· " + guiBridge.liveStatus
-                color: lightGrey
-                font.pixelSize: 28
+                font.pixelSize: 30
                 font.bold: true
                 Layout.alignment: Qt.AlignLeft
             }
@@ -70,19 +77,44 @@ Window {
             
             // System properties small text
             ColumnLayout {
-                spacing: 2
+                spacing: 3
                 Layout.alignment: Qt.AlignRight
-                Text { text: "MODEL: " + guiBridge.modelName; color: lightGrey; font.pixelSize: 10 }
-                Text { text: "SAMPLE RATE: " + guiBridge.sampleRate; color: lightGrey; font.pixelSize: 10 }
-                Text { text: "GUI FPS: 60"; color: lightGrey; font.pixelSize: 10 }
+                Text {
+                    objectName: "systemModel"
+                    text: "MODEL        " + guiBridge.modelName
+                    color: "#B2BDCC"
+                    font.pixelSize: 11
+                }
+                Text {
+                    objectName: "systemSampleRate"
+                    text: "SAMPLE RATE  " + (guiBridge.sampleRate / 1000).toFixed(0) + " kHz"
+                    color: "#B2BDCC"
+                    font.pixelSize: 11
+                }
+                Text {
+                    objectName: "systemGuiFps"
+                    text: "GUI FPS      " + guiBridge.guiFps
+                    color: "#B2BDCC"
+                    font.pixelSize: 11
+                }
             }
         }
         
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: lightGrey }
 
         Text {
+            objectName: "modeDescription"
+            Layout.fillWidth: true
+            text: guiBridge.modeDescription
+            color: "#8B95A7"
+            font.pixelSize: 13
+            wrapMode: Text.WordWrap
+        }
+
+        Text {
             Layout.fillWidth: true
             visible: guiBridge.errorMessage.length > 0
+                    && !guiBridge.liveFallbackOffered
             text: "ERROR: " + guiBridge.errorMessage
             color: "#FF5577"
             font.pixelSize: 12
@@ -91,67 +123,50 @@ Window {
 
         DemoControls {
             Layout.fillWidth: true
-            Layout.preferredHeight: 320
+            Layout.preferredHeight: implicitHeight
         }
 
         BenchmarkPanel {
             Layout.fillWidth: true
-            Layout.preferredHeight: guiBridge.isBenchmarkMode ? 340 : 0
+            Layout.fillHeight: guiBridge.isBenchmarkMode
+            Layout.preferredHeight: guiBridge.isBenchmarkMode ? -1 : 0
             visible: guiBridge.isBenchmarkMode
         }
 
-        RowLayout {
+        ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 16
+            spacing: 10
             visible: !guiBridge.isBenchmarkMode
 
-            Item {
-                Layout.preferredWidth: 260
-                Layout.fillHeight: true
-                visible: !guiBridge.isBenchmarkMode
-
-                DemoPanel {
-                    anchors.fill: parent
-                    visible: guiBridge.operationMode === "demo"
-                }
-
-                LivePanel {
-                    anchors.fill: parent
-                    visible: guiBridge.operationMode === "live"
-                }
+            Text {
+                objectName: "activityCaption"
+                Layout.fillWidth: true
+                visible: guiBridge.activityCaption.length > 0
+                color: cyan
+                font.pixelSize: 14
+                font.bold: true
+                elide: Text.ElideRight
+                text: guiBridge.activityCaption
             }
 
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: 16
+                spacing: 12
 
                 ColumnLayout {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     spacing: 4
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            text: guiBridge.operationMode === "demo"
-                                ? guiBridge.demoInputLabel
-                                : "RAW MIC INPUT"
-                            color: white
-                            font.pixelSize: 18
-                            font.bold: true
-                            font.letterSpacing: 1
-                        }
-                        Item { Layout.fillWidth: true }
-                        Rectangle {
-                            color: "transparent"
-                            border.color: cyan
-                            border.width: 1
-                            Layout.preferredWidth: statusText.width + 8
-                            Layout.preferredHeight: statusText.height + 4
-                            Text { id: statusText; text: "STATUS: CAPTURING"; color: cyan; font.pixelSize: 10; anchors.centerIn: parent }
-                        }
+                    Text {
+                        text: guiBridge.operationMode === "demo"
+                            ? guiBridge.demoInputLabel
+                            : "RAW MIC INPUT"
+                        color: white
+                        font.pixelSize: 16
+                        font.bold: true
                     }
 
                     Rectangle {
@@ -182,22 +197,13 @@ Window {
                     Layout.fillHeight: true
                     spacing: 4
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Text {
-                            text: guiBridge.operationMode === "demo"
-                                ? guiBridge.demoOutputLabel
-                                : "CLEAN ENHANCED OUTPUT"
-                            color: white
-                            font.pixelSize: 18
-                            font.bold: true
-                            font.letterSpacing: 1
-                        }
-                        Item { Layout.fillWidth: true }
-                        Text {
-                            text: "ENHANCED"; color: black; font.pixelSize: 10; font.bold: true; padding: 4
-                            Rectangle { anchors.fill: parent; color: cyan; radius: 4; z: -1 }
-                        }
+                    Text {
+                        text: guiBridge.operationMode === "demo"
+                            ? guiBridge.demoOutputLabel
+                            : "ENHANCED OUTPUT"
+                        color: white
+                        font.pixelSize: 16
+                        font.bold: true
                     }
 
                     Rectangle {
@@ -225,7 +231,7 @@ Window {
 
                 Metrics {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 250
+                    Layout.preferredHeight: 210
                 }
             }
         }

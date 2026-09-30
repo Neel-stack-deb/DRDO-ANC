@@ -19,6 +19,9 @@ def run_gui(
 ) -> None:
   """Run the standalone GUI application."""
 
+  # Pick up QML edits on the next launch (no stale .qmlc).
+  os.environ.setdefault("QML_DISABLE_DISK_CACHE", "1")
+
   QGuiApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
   QGuiApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
   QQuickStyle.setStyle("Fusion")
